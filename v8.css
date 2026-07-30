@@ -1,0 +1,2151 @@
+'use strict';
+
+const APP_VERSION = '7.0.0';
+const SAVE_KEY = 'english-legends-v5-starlight-save';
+const LEGACY_SAVE_KEYS = ['english-legends-v4-product-save'];
+const SAVE_VERSION = 7;
+const MAX_DAILY_SECONDS = 3 * 60 * 60;
+const $ = (selector, root = document) => selector.startsWith('#') ? root.querySelector(selector) : root.querySelector(selector);
+const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const sample = (array) => array[Math.floor(Math.random() * array.length)];
+const shuffle = (array) => {
+  const copy = [...array];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swap]] = [copy[swap], copy[index]];
+  }
+  return copy;
+};
+const randomId = () => `${Date.now().toString(36)}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+const todayKey = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const escapeHTML = (value = '') => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+const normalizeSpeech = (value = '') => String(value).toLowerCase().normalize('NFKC').replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const formatTime = (seconds) => {
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  return hours ? `${hours}時間${String(minutes).padStart(2, '0')}分` : `${minutes}分`;
+};
+
+const ICON_PATHS = {
+  sword: '<path d="M5 19l5-5m2-2 7-7 1-3-3 1-7 7m-3 1 4 4m-7 3 3 3"/>',
+  home: '<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  map: '<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15"/>',
+  party: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c.5-4 3-6 6-6s5.5 2 6 6m0-5c2.5 0 4.5 1.7 5 5"/>',
+  bag: '<path d="M6 8h12l2 13H4L6 8zM9 8V6a3 3 0 0 1 6 0v2"/>',
+  book: '<path d="M4 5a3 3 0 0 1 3-2h5v17H7a3 3 0 0 0-3 2zm16 0a3 3 0 0 0-3-2h-5v17h5a3 3 0 0 1 3 2z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1L5 6.1 3 9.5 5.1 11a7 7 0 0 0 0 2L3 14.5 5 18l2.3-1a8 8 0 0 0 1.7 1l.5 3h5l.5-3a8 8 0 0 0 1.7-1l2.3 1 2-3.5-2.1-1.5a7 7 0 0 0 .1-1z"/>',
+  star: '<path d="M12 2l3 6 6.5 1-4.7 4.6 1.1 6.4L12 17l-5.9 3 1.1-6.4L2.5 9 9 8z"/>',
+  spark: '<path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/>',
+  crown: '<path d="M3 7l4 4 5-7 5 7 4-4-2 12H5z"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4m-4 0h8"/>',
+  hint: '<path d="M9 18h6m-5 3h4M8.2 14.5A6 6 0 1 1 15.8 14.5C14.7 15.3 14 16 14 17h-4c0-1-.7-1.7-1.8-2.5z"/>',
+  potion: '<path d="M9 3h6m-5 0v5l-5 8a3 3 0 0 0 2.6 5h8.8a3 3 0 0 0 2.6-5l-5-8V3m-7 12h10"/>',
+  volume: '<path d="M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"/>',
+  mute: '<path d="M4 9h4l5-4v14l-5-4H4zm12 1 5 5m0-5-5 5"/>',
+  close: '<path d="M5 5l14 14M19 5L5 19"/>',
+  arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+  check: '<path d="M4 12l5 5L20 6"/>',
+  chest: '<path d="M3 10h18v10H3zM4 10V7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v3m-8 0v10m-2-6h4"/>',
+  lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  install: '<path d="M12 3v12m-5-5 5 5 5-5M4 19h16"/>'
+};
+function icon(name) {
+  return `<span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24">${ICON_PATHS[name] || ICON_PATHS.spark}</svg></span>`;
+}
+
+const CHARACTERS = {
+  ray: {
+    id: 'ray', avatar: 'hero', name: 'レイ', role: '剣士', image: 'assets/hero/ray.webp', battleImage: 'assets/hero/ray-battle.webp',
+    card: 'assets/hero/v52/ray-card.webp', portrait: 'assets/hero/v52/ray-portrait.webp', cutin: 'assets/hero/v52/ray-cutin.webp', cutinMobile: 'assets/hero/v52/ray-cutin-mobile.webp',
+    color: 'blue', style: '攻めが得意', skill: 'れんぞく斬り', ultimate: '光の三連斬り', passive: '正解を続けるほど攻撃が強くなる。',
+    tagline: 'まっすぐ進む、王道の剣士。', stats: { power: 5, guard: 3, magic: 2 },
+    desc: '剣で前に出る主人公。正解を続けると、れんぞく攻撃がどんどん強くなる。'
+  },
+  emma: {
+    id: 'emma', avatar: 'guardian', name: 'エマ', role: '守り役', image: 'assets/hero/emma.webp', battleImage: 'assets/hero/emma.webp',
+    card: 'assets/hero/v52/emma-card.webp', portrait: 'assets/hero/v52/emma-portrait.webp', cutin: 'assets/hero/v52/emma-cutin.webp', cutinMobile: 'assets/hero/v52/emma-cutin-mobile.webp',
+    color: 'gold', style: '守りが得意', skill: 'まもりの光', ultimate: '光のシールド', passive: '敵から受けるダメージが少なくなる。',
+    tagline: '仲間を守る、やさしい剣士。', stats: { power: 3, guard: 5, magic: 3 },
+    desc: '落ち着いて戦える主人公。まちがえても受けるダメージが少なく、立て直しやすい。'
+  },
+  kai: {
+    id: 'kai', avatar: 'rogue', name: 'カイ', role: '弓使い', image: 'assets/hero/kai.webp', battleImage: 'assets/hero/kai.webp',
+    card: 'assets/hero/v52/kai-card.webp', portrait: 'assets/hero/v52/kai-portrait.webp', cutin: 'assets/hero/v52/kai-cutin.webp', cutinMobile: 'assets/hero/v52/kai-cutin-mobile.webp',
+    color: 'green', style: '速さが得意', skill: 'はやて斬り', ultimate: '風の三段斬り', passive: 'すばやく答えると攻撃と英語パワーが上がる。',
+    tagline: '答えを見ぬく、すばやい剣士。', stats: { power: 4, guard: 2, magic: 3 },
+    desc: 'テンポよく戦う主人公。早く正解すると「FAST」が出て、必殺技を早く使える。'
+  },
+  luna: {
+    id: 'luna', avatar: 'mage', name: 'ルナ', role: '魔法使い', image: 'assets/hero/luna.webp', battleImage: 'assets/hero/luna.webp',
+    card: 'assets/hero/v52/luna-card.webp', portrait: 'assets/hero/v52/luna-portrait.webp', cutin: 'assets/hero/v52/luna-cutin.webp', cutinMobile: 'assets/hero/v52/luna-cutin-mobile.webp',
+    color: 'purple', style: '魔法が得意', skill: '星の魔法', ultimate: '星くずの大魔法', passive: '正解すると英語パワーが多くたまる。',
+    tagline: '言葉を星に変える、魔法使い。', stats: { power: 2, guard: 3, magic: 5 },
+    desc: '必殺技をたくさん使える主人公。リスニングや発音にも向いている。'
+  },
+  mint: {
+    id: 'mint', avatar: 'pet', name: 'ミント', role: '相棒', image: 'assets/hero/v52/mint-card.webp', battleImage: 'assets/hero/v52/mint-card.webp',
+    color: 'mint', skill: 'おうえん', desc: '一度だけ「ミントヒント」を使い、答えを考えやすくしてくれる。'
+  }
+};
+
+const item = (id, name, type, rarity, image, desc, stats = {}) => ({ id, name, type, rarity, image, desc, ...stats });
+const ITEMS = {
+  travelerBlade: item('travelerBlade', '旅人の剣', 'weapon', 'common', 'assets/items/sword-basic.svg', 'はじめに受け取る、軽くて使いやすい剣。', { attack: 7 }),
+  canvasCoat: item('canvasCoat', '冒険者の服', 'armor', 'common', 'assets/items/armor-basic.svg', '動きやすく、HPも少し上がる服。', { defense: 5, hp: 8 }),
+  scholarCharm: item('scholarCharm', 'まほうのお守り', 'charm', 'rare', 'assets/items/charm-magic.svg', '英語問題に正解したとき、魔法の力が上がる。', { magic: 8 }),
+  crimsonPotion: item('crimsonPotion', '回復薬', 'consumable', 'common', 'assets/items/potion-small.svg', '戦闘中にHPを35回復する赤い薬。'),
+  aquaPotion: item('aquaPotion', '大きな回復薬', 'consumable', 'common', 'assets/items/potion-large.svg', 'HPをたくさん回復する青い薬。'),
+  lumenCrystal: item('lumenCrystal', '光の石', 'material', 'rare', 'assets/items/light-stone.svg', '正解したときに生まれる、きれいな石。'),
+  amberOre: item('amberOre', '竜の石', 'material', 'rare', 'assets/items/dragon-stone.svg', '竜の力が少し残っている、かたい石。'),
+  forestKey: item('forestKey', '森の鍵', 'material', 'rare', 'assets/items/forest-key.svg', '森にある古い宝箱を開ける鍵。'),
+  flameBlade: item('flameBlade', '炎の剣', 'weapon', 'rare', 'assets/items/sword-fire.svg', '正解を続けると、炎が強くなる剣。', { attack: 16, magic: 3 }),
+  frostBlade: item('frostBlade', '氷の剣', 'weapon', 'epic', 'assets/items/sword-ice.svg', '冷たい光をまとった、切れ味のよい剣。', { attack: 23, magic: 5 }),
+  sunBlade: item('sunBlade', '光の剣', 'weapon', 'epic', 'assets/items/sword-light.svg', '暗い場所を明るく照らす金色の剣。', { attack: 30, magic: 8 }),
+  dragonBlade: item('dragonBlade', '伝説の剣', 'weapon', 'legendary', 'assets/items/sword-legend.svg', '24の英語スキルを集めた勇者だけが使える剣。', { attack: 42, magic: 15 }),
+  moonCharm: item('moonCharm', '月のお守り', 'charm', 'epic', 'assets/items/charm-moon.svg', '英文の形を見つけやすくするお守り。', { magic: 14, defense: 3 }),
+  shadowRelic: item('shadowRelic', '古い石板', 'material', 'epic', 'assets/items/old-tablet.svg', '昔の英語が書かれた、ふしぎな石板。'),
+  braveElixir: item('braveElixir', '元気の薬', 'consumable', 'rare', 'assets/items/potion-energy.svg', 'ボスに挑む前に飲む、特別な回復薬。'),
+  windTonic: item('windTonic', '集中ドリンク', 'consumable', 'common', 'assets/items/drink-focus.svg', '落ち着いて問題を読むための飲み物。'),
+  whiteTonic: item('whiteTonic', 'まもりの薬', 'consumable', 'rare', 'assets/items/potion-guard.svg', '受けるダメージを少し減らす白い薬。'),
+  royalCoin: item('royalCoin', '王さまのコイン', 'material', 'rare', 'assets/items/king-coin.svg', '冒険を上手にクリアした記念にもらえるコイン。')
+};
+
+const MONSTERS = {
+  goblin: { id: 'goblin', number: '001', name: 'ゴブリン剣士', title: '森のモンスター', desc: '小さな体ですばやく動く。剣を持っているが、少しあわてんぼう。', image: 'assets/monsters/goblin.webp', baseHp: 150, attack: 9, biome: 'forest', drops: ['forestKey', 'windTonic', 'scholarCharm'] },
+  frostwolf: { id: 'frostwolf', number: '002', name: '氷のオオカミ', title: '雪山のモンスター', desc: '氷の毛を持つ大きなオオカミ。遠くからでも足音を聞き分ける。', image: 'assets/monsters/ice-wolf.webp', baseHp: 190, attack: 12, biome: 'frost', drops: ['aquaPotion', 'lumenCrystal', 'frostBlade'] },
+  flamewitch: { id: 'flamewitch', number: '003', name: '炎の魔女', title: '火山のモンスター', desc: '炎の魔法を使う強敵。単語の順番を入れ替えて、冒険者をまよわせる。', image: 'assets/monsters/fire-witch.webp', baseHp: 230, attack: 14, biome: 'fire', drops: ['crimsonPotion', 'amberOre', 'flameBlade'] },
+  stonegolem: { id: 'stonegolem', number: '004', name: '岩のゴーレム', title: '遺跡のモンスター', desc: '大きな岩でできた番人。動きは遅いが、とても力が強い。', image: 'assets/monsters/stone-golem.webp', baseHp: 290, attack: 16, biome: 'ruins', drops: ['amberOre', 'shadowRelic', 'moonCharm'] },
+  lanternimp: { id: 'lanternimp', number: '005', name: 'ランプの小悪魔', title: '夜のモンスター', desc: 'ランプを持ったいたずら好き。正しい答えを見つけると、びっくりして逃げ出す。', image: 'assets/monsters/lamp-imp.webp', baseHp: 175, attack: 11, biome: 'fire', drops: ['crimsonPotion', 'lumenCrystal', 'flameBlade'] },
+  wraithknight: { id: 'wraithknight', number: '006', name: 'おばけ騎士', title: '古い城のモンスター', desc: '昔の城を守り続ける騎士。過去の出来事をたずねる問題が得意。', image: 'assets/monsters/ghost-knight.webp', baseHp: 330, attack: 18, biome: 'shadow', drops: ['shadowRelic', 'moonCharm', 'sunBlade'] },
+  dreadrider: { id: 'dreadrider', number: '007', name: '黒い騎士', title: '王さまの城の門番', desc: '黒い馬に乗った強い騎士。長い英文を読める者だけを王さまの城へ通す。', image: 'assets/monsters/dragon-rider.webp', baseHp: 390, attack: 20, biome: 'shadow', drops: ['braveElixir', 'royalCoin', 'sunBlade'] },
+  abyssdragon: { id: 'abyssdragon', number: '008', name: '闇のドラゴン', title: '最後のボス', desc: '王国から言葉をうばった大きなドラゴン。今まで覚えた英語がすべて試される。', image: 'assets/monsters/dark-dragon.webp', baseHp: 520, attack: 23, biome: 'abyss', drops: ['dragonBlade', 'moonCharm', 'royalCoin'] }
+};
+
+const choice = (prompt, answers, correct, explain, instruction = '') => ({ type: 'choice', prompt, answers, correct, explain, instruction });
+const listen = (prompt, speech, answers, correct, explain) => ({ type: 'listen', prompt, speech, answers, correct, explain });
+const order = (prompt, words, target, explain) => ({ type: 'order', prompt, words, target, explain });
+const voice = (prompt, target, explain) => ({ type: 'voice', prompt, target, explain });
+const topic = (id, grade, name, rune, summary, questions) => ({ id, grade, name, rune, summary, questions: questions.map((q) => ({ ...q, topicId: id })) });
+
+const TOPICS = {
+  thisThat: topic('thisThat', '中1・基礎', 'This / That', '指', '近くのものと遠くのものを正しく指す。', [
+    choice('これは私の剣です。', ['This is my sword.', 'That is my sword.', 'This are my sword.', 'I am my sword.'], 0, '近くの1つのものは This is ... で表します。'),
+    choice('あれは大きな城です。', ['This is a big castle.', 'That is a big castle.', 'Those is a big castle.', 'That are a castle.'], 1, '遠くの1つのものは That is ... です。'),
+    listen('聞こえた英文の意味を選ぼう。', 'This is a blue crystal.', ['これは青い結晶です。', 'あれは青い結晶です。', 'これは赤い剣です。', 'あれは青い城です。'], 0, 'This は「これ」、blue crystal は「青い結晶」です。'),
+    voice('「これは私の本です」と唱えよう。', 'This is my book.', 'This is my book. の順に、ゆっくり言えば大丈夫です。')
+  ]),
+  beVerb: topic('beVerb', '中1・基礎', 'be動詞', '存', 'am / is / are で人や物の状態を結ぶ。', [
+    choice('私は12歳です。', ['I is twelve.', 'I am twelve.', 'I are twelve.', 'I be twelve.'], 1, 'I と一緒に使うbe動詞は am です。'),
+    choice('彼らは森にいます。', ['They am in the forest.', 'They is in the forest.', 'They are in the forest.', 'They be in the forest.'], 2, 'They のbe動詞は are です。'),
+    order('「彼女は親切です」を並べよう。', ['kind', 'is', 'She', '.'], 'She is kind.', '主語 She、be動詞 is、補語 kind の順です。'),
+    listen('聞こえた英文を選ぼう。', 'You are ready.', ['私は準備できています。', 'あなたは準備できています。', '彼は準備できています。', 'あなたは疲れています。'], 1, 'You are ready. は「あなたは準備できています」です。')
+  ]),
+  pronouns: topic('pronouns', '中1・基礎', '代名詞', '人', 'I / you / he / she / it / they を使い分ける。', [
+    choice('彼は私の友達です。', ['She is my friend.', 'He is my friend.', 'It is my friend.', 'They is my friend.'], 1, '男性一人を指す代名詞は he です。'),
+    choice('それは白い猫です。', ['He is a white cat.', 'She is a white cat.', 'It is a white cat.', 'I am a white cat.'], 2, '動物や物を指す代名詞には it が使えます。'),
+    listen('誰について話している？', 'She is my sister.', ['彼は私の兄です。', '彼女は私の姉です。', '私は彼女の姉です。', '彼らは姉妹です。'], 1, 'She は「彼女」、sister は「姉・妹」です。'),
+    voice('「彼らは冒険者です」と唱えよう。', 'They are adventurers.', '複数の彼らは They、be動詞は are です。')
+  ]),
+  questions: topic('questions', '中1・基礎', '疑問文・否定文', '問', 'be動詞を前に出し、質問と答えを作る。', [
+    choice('これはあなたの盾ですか。', ['This is your shield?', 'Is this your shield?', 'Are this your shield?', 'Do this your shield?'], 1, 'be動詞の疑問文では Is を文の先頭へ出します。'),
+    choice('いいえ、違います。', ['No, this is not.', 'No, it is not.', 'No, I am not it.', 'No, it are not.'], 1, 'Is this ...? には No, it is not. と答えられます。'),
+    order('「彼は魔法使いですか」を並べよう。', ['a wizard', 'he', 'Is', '?'], 'Is he a wizard?', 'Is + he + a wizard の語順です。'),
+    listen('質問への正しい答えは？', 'Are you a student?', ['Yes, I am.', 'Yes, it is.', 'Yes, you are.', 'Yes, I do.'], 0, 'Are you ...? への自分の答えは Yes, I am. です。')
+  ]),
+  generalVerb: topic('generalVerb', '中1・基本', '一般動詞', '動', 'play / like / have / go で行動を表す。', [
+    choice('私は毎日ゲームをします。', ['I play games every day.', 'I plays games every day.', 'I am play games every day.', 'I played games tomorrow.'], 0, 'I の現在形は動詞の原形 play を使います。'),
+    choice('私は青い剣を持っています。', ['I am a blue sword.', 'I have a blue sword.', 'I has a blue sword.', 'I having a blue sword.'], 1, '「持っている」は have を使います。'),
+    order('「私はドラゴンが好きです」を並べよう。', ['dragons', 'like', 'I', '.'], 'I like dragons.', '主語 I、動詞 like、目的語 dragons の順です。'),
+    voice('「私は冒険が好きです」と唱えよう。', 'I like adventures.', 'I like ... で「私は…が好き」です。')
+  ]),
+  thirdPerson: topic('thirdPerson', '中1・基本', '三単現', '三', 'he / she の現在形で動詞に s を付ける。', [
+    choice('彼は毎朝走ります。', ['He run every morning.', 'He runs every morning.', 'He running every morning.', 'He ran tomorrow.'], 1, 'He の現在形では run に s を付けて runs です。'),
+    choice('彼女は本を読みません。', ['She do not read books.', 'She does not reads books.', 'She does not read books.', 'She is not read books.'], 2, 'does not の後ろは動詞の原形 read です。'),
+    listen('聞こえた英文の意味は？', 'Does he play soccer?', ['彼はサッカーをします。', '彼はサッカーをしますか。', '彼らはサッカーをしますか。', '彼はサッカーをしません。'], 1, 'Does he ...? は「彼は…しますか」です。'),
+    order('「彼女は猫を飼っています」を並べよう。', ['a cat', 'has', 'She', '.'], 'She has a cat.', 'She の have は has に変化します。')
+  ]),
+  progressive: topic('progressive', '中1・基本', '現在進行形', '今', 'be動詞 + -ing で今していることを表す。', [
+    choice('私は今走っています。', ['I run now.', 'I am running now.', 'I am run now.', 'I running now.'], 1, '現在進行形は am + running です。'),
+    choice('彼らはドラゴンと戦っています。', ['They fight a dragon.', 'They are fighting a dragon.', 'They is fighting a dragon.', 'They fighting a dragon.'], 1, 'They に合わせて are fighting を使います。'),
+    order('「彼女は本を読んでいます」を並べよう。', ['a book', 'reading', 'is', 'She', '.'], 'She is reading a book.', 'She + is + reading の順です。'),
+    voice('「私は準備しています」と唱えよう。', 'I am getting ready.', 'am + getting で、今準備している状態を表します。')
+  ]),
+  past: topic('past', '中1・発展', '過去形', '過', '昨日や以前に起きたことを語る。', [
+    choice('私は昨日学校へ行きました。', ['I go to school yesterday.', 'I went to school yesterday.', 'I am going yesterday.', 'I will go yesterday.'], 1, 'go の過去形は went です。'),
+    choice('彼女は先週テニスをしました。', ['She plays tennis last week.', 'She played tennis last week.', 'She is playing last week.', 'She play tennis last week.'], 1, '規則動詞 play の過去形は played です。'),
+    listen('聞こえた英文を選ぼう。', 'We saw a dragon yesterday.', ['私たちは昨日ドラゴンを見ました。', '私たちは明日ドラゴンを見ます。', '私たちは毎日ドラゴンを見ます。', '彼らは昨日ドラゴンを見ました。'], 0, 'saw は see の過去形です。'),
+    order('「彼は宿題をしませんでした」を並べよう。', ['his homework', 'did not', 'He', 'do', '.'], 'He did not do his homework.', 'did not の後ろは原形 do を使います。')
+  ]),
+  future: topic('future', '中2・基礎', '未来表現', '未', 'will / be going to で未来を表す。', [
+    choice('私は明日そこへ行くつもりです。', ['I went there tomorrow.', 'I am going to go there tomorrow.', 'I go there yesterday.', 'I was going there tomorrow.'], 1, '予定は be going to + 動詞の原形で表せます。'),
+    choice('きっと雨が降るでしょう。', ['It will rain.', 'It rains yesterday.', 'It is rain.', 'It will raining.'], 0, '予測には will + 動詞の原形を使います。'),
+    order('「私たちはあなたを助けます」を並べよう。', ['help', 'will', 'We', 'you', '.'], 'We will help you.', '主語 + will + 動詞の原形です。'),
+    voice('「私はあきらめません」と唱えよう。', 'I will not give up.', 'will not + 動詞の原形で未来の否定を表します。')
+  ]),
+  modals: topic('modals', '中2・基礎', '助動詞', '能', 'can / must / should で能力・義務・助言を表す。', [
+    choice('私は泳ぐことができます。', ['I can swim.', 'I can to swim.', 'I am can swim.', 'I could swimming.'], 0, 'can の後ろは動詞の原形です。'),
+    choice('あなたはここで走ってはいけません。', ['You must run here.', 'You must not run here.', 'You do not must run.', 'You should running here.'], 1, '禁止は must not を使います。'),
+    listen('聞こえた助言は？', 'You should get some rest.', ['あなたは休まなければなりません。', 'あなたは少し休んだ方がよいです。', 'あなたは休むことができます。', 'あなたは休みませんでした。'], 1, 'should は「〜した方がよい」という助言です。'),
+    voice('「私はこの魔法を使えます」と唱えよう。', 'I can use this magic.', 'can + use で能力を表します。')
+  ]),
+  thereIs: topic('thereIs', '中2・基礎', 'There is / are', '在', '場所に何があるかを説明する。', [
+    choice('机の上に本が一冊あります。', ['There is a book on the desk.', 'There are a book on the desk.', 'It is a book on the desk.', 'A book there is desk.'], 0, '1つなら There is a ... です。'),
+    choice('森には三匹の狼がいます。', ['There is three wolves in the forest.', 'There are three wolves in the forest.', 'They are forest wolves three.', 'There have three wolves.'], 1, '複数なら There are ... です。'),
+    order('「近くに城がありますか」を並べよう。', ['a castle', 'there', 'Is', 'near here', '?'], 'Is there a castle near here?', '疑問文は Is there ...? です。'),
+    listen('聞こえた場所を選ぼう。', 'There are two keys under the table.', ['テーブルの上に鍵が二つあります。', 'テーブルの下に鍵が二つあります。', 'テーブルの下に鍵が一つあります。', '机の中に鍵があります。'], 1, 'under the table は「テーブルの下」です。')
+  ]),
+  infinitive: topic('infinitive', '中2・基本', '不定詞', '志', 'to + 動詞で目的・希望・必要を表す。', [
+    choice('私は英語を勉強したいです。', ['I want study English.', 'I want to study English.', 'I want studying English.', 'I to want English.'], 1, 'want の後ろは to + 動詞の原形です。'),
+    choice('私はあなたに会うためにここへ来ました。', ['I came here to see you.', 'I came here seeing you.', 'I come here saw you.', 'I came to here see you.'], 0, '目的は to see you で表せます。'),
+    order('「読むべき本があります」を並べよう。', ['a book', 'have', 'I', 'to read', '.'], 'I have a book to read.', '名詞の後ろの to read が「読むべき」を説明します。'),
+    voice('「私は勇者になりたい」と唱えよう。', 'I want to be a hero.', 'want to be で「〜になりたい」です。')
+  ]),
+  gerund: topic('gerund', '中2・基本', '動名詞', '事', '動詞 + ing を名詞として使う。', [
+    choice('私は本を読むことが好きです。', ['I like read books.', 'I like reading books.', 'I like to reading books.', 'I am like books.'], 1, 'reading を名詞のように使います。'),
+    choice('彼は泳ぐことをやめました。', ['He stopped swimming.', 'He stopped to swimming.', 'He stop swim.', 'He stopped swam.'], 0, 'stop の後ろに動名詞 swimming を置きます。'),
+    order('「料理することは楽しい」を並べよう。', ['fun', 'Cooking', 'is', '.'], 'Cooking is fun.', '動名詞 Cooking を文の主語にできます。'),
+    listen('何が得意だと言っている？', 'She is good at playing the piano.', ['彼女はピアノを弾くのが得意です。', '彼女は歌うのが得意です。', '彼女はピアノを持っています。', '彼女はピアノを弾きました。'], 0, 'be good at + ing で「〜が得意」です。')
+  ]),
+  comparison: topic('comparison', '中2・基本', '比較', '比', '二つ以上のものを比べる。', [
+    choice('この剣はあの剣より長い。', ['This sword is long than that one.', 'This sword is longer than that one.', 'This sword is longest that one.', 'This sword more long than that.'], 1, '短い形容詞の比較級は -er + than です。'),
+    choice('彼はクラスで一番速い。', ['He is faster in his class.', 'He is the fastest in his class.', 'He is most fast in his class.', 'He is as fast in class.'], 1, '最上級には the + fastest を使います。'),
+    order('「私は兄と同じくらい背が高い」を並べよう。', ['my brother', 'as tall as', 'I am', '.'], 'I am as tall as my brother.', '同程度は as ... as です。'),
+    voice('「この竜はあの竜より強い」と唱えよう。', 'This dragon is stronger than that one.', 'strong の比較級は stronger です。')
+  ]),
+  passive: topic('passive', '中2・発展', '受け身', '受', 'be動詞 + 過去分詞で「〜される」を表す。', [
+    choice('この城は王によって建てられました。', ['This castle built the king.', 'This castle was built by the king.', 'This castle was build by the king.', 'The king was built this castle.'], 1, '過去の受け身は was built です。'),
+    choice('英語は多くの国で話されています。', ['English speaks in many countries.', 'English is spoken in many countries.', 'English is speaking many countries.', 'English was speak in countries.'], 1, '現在の受け身は is spoken です。'),
+    listen('何が作られた？', 'The bridge was made of stone.', ['橋は木で作られました。', '橋は石で作られました。', '城は石で作られました。', '石が橋を作りました。'], 1, 'made of stone は「石で作られた」です。'),
+    order('「その扉は毎晩閉められます」を並べよう。', ['every night', 'is closed', 'The door', '.'], 'The door is closed every night.', '主語 + is closed + 時を表す語です。')
+  ]),
+  conjunctions: topic('conjunctions', '中2・発展', '接続詞', '結', 'because / when / if / that で文をつなぐ。', [
+    choice('雨だったので、私は家にいました。', ['I stayed home but it was rainy.', 'I stayed home because it was rainy.', 'I stayed home when because rain.', 'I stayed because home rain.'], 1, '理由は because でつなぎます。'),
+    choice('家に着いたとき、電話してください。', ['Call me when you get home.', 'Call me because you get home.', 'Call me if you got yesterday.', 'When call me get home.'], 0, '「〜するとき」は when でつなぎます。'),
+    order('「時間があれば手伝います」を並べよう。', ['I will help you', 'if', 'I have time', '.'], 'I will help you if I have time.', '条件を if 節で後ろにつなぎます。'),
+    listen('彼が何を知っている？', 'I know that she is kind.', ['私は彼女が親切だと知っています。', '私は彼女に親切です。', '彼女は私を知っています。', '私は彼女が来ると願います。'], 0, 'that 以下が know の内容です。')
+  ]),
+  presentPerfect: topic('presentPerfect', '中3・基礎', '現在完了・経験', '験', 'have + 過去分詞で経験を表す。', [
+    choice('私は京都へ二度行ったことがあります。', ['I went to Kyoto twice.', 'I have been to Kyoto twice.', 'I have gone Kyoto yesterday.', 'I am been to Kyoto.'], 1, '経験は have been to ... で表せます。'),
+    choice('あなたは今までに竜を見たことがありますか。', ['Did you ever see a dragon?', 'Have you ever seen a dragon?', 'Are you ever seen a dragon?', 'Have you ever saw a dragon?'], 1, '経験の疑問文は Have you ever + 過去分詞です。'),
+    listen('何を一度もしていない？', 'I have never ridden a horse.', ['馬を一度だけ見ました。', '馬に一度も乗ったことがありません。', '昨日馬に乗りませんでした。', '馬を飼ったことがありません。'], 1, 'never ridden は「一度も乗ったことがない」です。'),
+    voice('「私はその映画を見たことがあります」と唱えよう。', 'I have seen that movie.', 'see の過去分詞は seen です。')
+  ]),
+  duration: topic('duration', '中3・基礎', '現在完了・継続', '継', 'for / since と現在完了で継続を表す。', [
+    choice('私はここに三年間住んでいます。', ['I live here three years.', 'I have lived here for three years.', 'I lived here since three years.', 'I am living here yesterday.'], 1, '期間には for three years を使います。'),
+    choice('彼は月曜日から病気です。', ['He has been sick since Monday.', 'He is sick for Monday.', 'He was sick since Monday yesterday.', 'He has sick Monday.'], 0, '始点には since Monday を使います。'),
+    order('「どのくらい英語を勉強していますか」を並べよう。', ['studied English', 'have you', 'How long', '?'], 'How long have you studied English?', 'How long + have you + 過去分詞です。'),
+    listen('どのくらい待っている？', 'We have waited for an hour.', ['1時間待っています。', '1時間前に出発しました。', '1時まで待ちます。', '毎時間待っています。'], 0, 'for an hour は「1時間」です。')
+  ]),
+  participle: topic('participle', '中3・基本', '分詞', '飾', '現在分詞・過去分詞で名詞を説明する。', [
+    choice('あそこで走っている少年は弟です。', ['The boy run there is my brother.', 'The boy running there is my brother.', 'The running is boy my brother.', 'The boy ran there my brother.'], 1, 'running there が boy を後ろから説明します。'),
+    choice('英語で書かれた本を読みました。', ['I read a book writing in English.', 'I read a book written in English.', 'I read written a book English.', 'I was read a book in English.'], 1, 'written in English が book を説明します。'),
+    listen('どの窓？', 'Look at the broken window.', ['開いている窓を見て。', '壊れた窓を見て。', '窓を壊して。', '窓から見て。'], 1, 'broken は「壊された・壊れた」です。'),
+    order('「木の下で眠っている犬」を並べよう。', ['under the tree', 'sleeping', 'the dog'], 'the dog sleeping under the tree', '現在分詞のまとまりを名詞の後ろに置きます。')
+  ]),
+  relative: topic('relative', '中3・基本', '関係代名詞', '関', 'who / which / that で名詞を詳しく説明する。', [
+    choice('私は英語を話す少女を知っています。', ['I know a girl who speaks English.', 'I know a girl which speaks English.', 'I know who a girl English.', 'I know a girl speak English.'], 0, '人を説明する主格には who が使えます。'),
+    choice('これは父が作った机です。', ['This is a desk who my father made.', 'This is a desk which my father made.', 'This is which a desk father.', 'This desk made my father is.'], 1, '物を説明する目的格には which が使えます。'),
+    order('「昨日会った少年」を並べよう。', ['I met yesterday', 'the boy', 'that'], 'the boy that I met yesterday', '名詞の後ろに that + 文を置きます。'),
+    voice('「これは私が探していた鍵です」と唱えよう。', 'This is the key that I was looking for.', 'that 以下が key を説明しています。')
+  ]),
+  indirect: topic('indirect', '中3・発展', '間接疑問文', '尋', '疑問詞 + 主語 + 動詞の語順を使う。', [
+    choice('彼がどこに住んでいるか知っていますか。', ['Do you know where does he live?', 'Do you know where he lives?', 'Do you know where lives he?', 'Do you know he where lives?'], 1, '間接疑問文の中は平叙文の語順です。'),
+    choice('何時か教えてください。', ['Please tell me what time is it.', 'Please tell me what time it is.', 'Please tell what is time me.', 'Please tell me is it time.'], 1, 'what time it is の語順になります。'),
+    listen('何をたずねている？', 'I wonder why she is angry.', ['彼女がいつ来るか知りたい。', '彼女がなぜ怒っているのかと思う。', '彼女は怒っていないと思う。', '彼女に怒っている理由を言う。'], 1, 'why she is angry は「なぜ彼女が怒っているか」です。'),
+    order('「駅がどこか知っていますか」を並べよう。', ['the station is', 'Do you know', 'where', '?'], 'Do you know where the station is?', '疑問詞の後ろは the station is です。')
+  ]),
+  conditional: topic('conditional', '中3・発展', '条件文', '条', 'if を使って条件と結果を表す。', [
+    choice('雨が降れば、家にいます。', ['If it rains, I will stay home.', 'If it will rain, I stay yesterday.', 'If it rain, I will stayed home.', 'When rain if I home.'], 0, '未来の条件でも if 節は現在形 rains です。'),
+    choice('早く起きなければ、遅れます。', ['If you get up early, you will be late.', 'If you do not get up early, you will be late.', 'Unless you not get up, late.', 'If you did not early, will late.'], 1, '否定の条件は if you do not ... です。'),
+    order('「時間があれば一緒に行きます」を並べよう。', ['with you', 'I will go', 'if I have time', '.'], 'I will go with you if I have time.', '結果の文と if 節をつなぎます。'),
+    voice('「練習すれば上手になります」と唱えよう。', 'If you practice, you will improve.', 'if 節は practice、結果は will improve です。')
+  ]),
+  hypothetical: topic('hypothetical', '中3・発展', '仮定法', '夢', '現実とは違う想像を If + 過去形で表す。', [
+    choice('もし翼があれば、空を飛ぶのに。', ['If I have wings, I fly.', 'If I had wings, I would fly.', 'If I will have wings, I would flew.', 'If I had wings, I will fly.'], 1, '仮定法は If + 過去形、would + 動詞の原形です。'),
+    choice('私があなたなら、その本を読みます。', ['If I am you, I read the book.', 'If I were you, I would read the book.', 'If I was you, I will read.', 'I would you if read.'], 1, '定型表現 If I were you ... を使います。'),
+    listen('どんな願い？', 'I wish I could speak English well.', ['英語を上手に話せてよかった。', '英語を上手に話せたらなあ。', '英語を話す必要がある。', '英語を話してはいけない。'], 1, 'I wish I could ... は実現してほしい願いです。'),
+    order('「もっと時間があれば手伝えるのに」を並べよう。', ['I could help you', 'If I had more time', ',', '.'], 'If I had more time, I could help you.', 'If + 過去形と could + 動詞を組み合わせます。')
+  ]),
+  reading: topic('reading', '中3・総合', '長文読解・総復習', '読', '複数の文法をつなぎ、物語の意味を読み取る。', [
+    choice('Mia has lived in the village for five years. She helps travelers who are lost. ミアについて正しいのは？', ['5年前に村を出た。', '5年間村に住み、道に迷った旅人を助ける。', '旅人に道をたずねている。', 'これから村に住む予定だ。'], 1, 'has lived for five years は継続、who are lost は travelers を説明します。'),
+    choice('If the weather is clear tomorrow, we will climb the mountain. 明日の計画は？', ['天気に関係なく登る。', '晴れれば山に登る。', '昨日山に登った。', '山へ行くのをやめた。'], 1, 'if 節が条件、will climb がその結果です。'),
+    listen('短い物語を聞いて答えよう。', 'The key was found by a boy who was playing near the river.', ['少年が川の近くで遊んでいたとき鍵を見つけた。', '鍵が少年を見つけた。', '少年は川で鍵をなくした。', '鍵は王によって作られた。'], 0, 'was found は受け身、who was playing が boy を説明します。'),
+    voice('最後の言葉を唱えよう。', 'We can open the door to a new world.', 'can + 動詞の原形で、未来への可能性を表します。')
+  ])
+};
+
+const REGIONS = [
+  { id: 1, name: '星明かりの森', subtitle: 'This / That と be動詞', rune: 'Ⅰ', x: 18, y: 82, story: ['星明かりの森で、ものを指す言葉が消えてしまいました。', 'ミントと一緒に、This と That の力を取り戻そう。'] },
+  { id: 2, name: 'きりの森', subtitle: '動きと過去の言い方', rune: 'Ⅱ', x: 31, y: 69, story: ['森のきりが、動きを表す言葉をかくしています。', 'だれが、いつ、何をしたのか。文の流れを見つけよう。'] },
+  { id: 3, name: '火山の道', subtitle: '未来・can・したいこと', rune: 'Ⅲ', x: 49, y: 57, story: ['火山では、未来や「できる」を表す言葉が力になります。', 'will、can、to do を使って、先へ進もう。'] },
+  { id: 4, name: '氷の洞くつ', subtitle: '比べ方と受け身', rune: 'Ⅳ', x: 64, y: 43, story: ['氷の洞くつには、比べる文と受け身の文が眠っています。', '長い文も、ひとつずつ分ければ大丈夫です。'] },
+  { id: 5, name: '古い遺跡', subtitle: '現在完了と関係代名詞', rune: 'Ⅴ', x: 80, y: 31, story: ['古い遺跡では、昔から今まで続くことをたずねられます。', '現在完了、分詞、関係代名詞を使って道を開こう。'] },
+  { id: 6, name: '王さまの城', subtitle: '中学英語の最終バトル', rune: 'Ⅵ', x: 64, y: 17, story: ['王さまの城の上空に、言葉をうばった闇のドラゴンが現れました。', '今まで覚えた英語を使って、王国を助けよう。'] }
+];
+
+const TOPIC_SEQUENCE = Object.keys(TOPICS);
+const QUEST_NAMES = [
+  ['ミントとの出会い', '光る橋のことば', '森の岩番人', '氷のオオカミ'],
+  ['動きのことば', '三人称の s', '今していること', 'きのうの出来事'],
+  ['明日の予定', 'できる・してもよい', 'いる・ある', 'したいこと'],
+  ['動きを名前にする', '強さを比べる', '受け身の文', '文をつなぐことば'],
+  ['ずっと続いていること', '経験を話す', '名詞を説明する', '人や物をくわしく説明'],
+  ['文の中の質問', 'もし〜なら', 'もしもできたら', '最後の英語バトル']
+];
+const MONSTER_SEQUENCE = ['goblin', 'lanternimp', 'stonegolem', 'frostwolf', 'goblin', 'lanternimp', 'frostwolf', 'wraithknight', 'flamewitch', 'lanternimp', 'stonegolem', 'flamewitch', 'frostwolf', 'stonegolem', 'wraithknight', 'frostwolf', 'wraithknight', 'stonegolem', 'dreadrider', 'wraithknight', 'dreadrider', 'stonegolem', 'dreadrider', 'abyssdragon'];
+const QUESTS = TOPIC_SEQUENCE.map((topicId, index) => {
+  const regionId = Math.floor(index / 4) + 1;
+  const questIndex = (index % 4) + 1;
+  return {
+    id: index + 1,
+    regionId,
+    index: questIndex,
+    topicId,
+    monsterId: MONSTER_SEQUENCE[index],
+    name: QUEST_NAMES[regionId - 1][questIndex - 1],
+    description: TOPICS[topicId].summary,
+    level: 1 + index,
+    gold: 55 + index * 9,
+    xp: 42 + index * 7,
+    isBoss: questIndex === 4
+  };
+});
+
+const DAILY_MISSIONS = [
+  { field: 'answers', target: 12, name: '英語問題を12問', description: '選択・並べ替え・リスニングを合わせて12問', reward: '40ゴールド' },
+  { field: 'correct', target: 9, name: '9問正解する', description: 'まちがえても、もう一度できる', reward: '光の石' },
+  { field: 'battles', target: 1, name: 'モンスターを1体たおす', description: 'どの冒険でも達成できる', reward: '50ゴールド' },
+  { field: 'voice', target: 1, name: '声で英語を1回言う', description: '音声入力が使えない端末では選択問題に変わる', reward: 'ジェム1個' }
+];
+
+function defaultState() {
+  return {
+    version: SAVE_VERSION,
+    profileComplete: false,
+    profile: { name: 'レイ', avatar: 'hero' },
+    level: 1,
+    xp: 0,
+    gold: 120,
+    gems: 3,
+    inventory: { travelerBlade: 1, canvasCoat: 1, crimsonPotion: 3 },
+    equipment: { weapon: 'travelerBlade', armor: 'canvasCoat', charm: null },
+    newItems: [],
+    unlockedQuest: 1,
+    completedQuests: {},
+    mastery: Object.fromEntries(Object.keys(TOPICS).map((id) => [id, { attempts: 0, correct: 0, score: 0, lastSeen: null }])),
+    discoveredMonsters: ['goblin'],
+    defeatedMonsters: {},
+    regionStoriesSeen: [],
+    receipts: [],
+    pendingReward: null,
+    daily: { date: todayKey(), answers: 0, correct: 0, battles: 0, voice: 0, claimed: false },
+    play: { date: todayKey(), seconds: 0 },
+    settings: { sound: true, voice: true, haptics: true, reducedMotion: false, musicVolume: 0.55, sfxVolume: 0.78 },
+    lastScreen: 'title'
+  };
+}
+function mergeState(base, incoming) {
+  if (Array.isArray(base)) return Array.isArray(incoming) ? incoming : base;
+  if (base && typeof base === 'object') {
+    const result = { ...base };
+    Object.entries(incoming || {}).forEach(([key, value]) => { result[key] = key in base ? mergeState(base[key], value) : value; });
+    return result;
+  }
+  return incoming ?? base;
+}
+function sanitiseState(candidate) {
+  const merged = mergeState(defaultState(), candidate && typeof candidate === 'object' ? candidate : {});
+  merged.version = SAVE_VERSION;
+  merged.level = clamp(Number(merged.level) || 1, 1, 99);
+  merged.xp = Math.max(0, Number(merged.xp) || 0);
+  merged.gold = Math.max(0, Number(merged.gold) || 0);
+  merged.gems = Math.max(0, Number(merged.gems) || 0);
+  merged.unlockedQuest = clamp(Number(merged.unlockedQuest) || 1, 1, QUESTS.length);
+  merged.profile.name = String(merged.profile.name || 'レイ').slice(0, 16);
+  return merged;
+}
+function loadState() {
+  try {
+    let raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) {
+      for (const legacyKey of LEGACY_SAVE_KEYS) {
+        const legacy = localStorage.getItem(legacyKey);
+        if (legacy) { raw = legacy; break; }
+      }
+    }
+    const loaded = raw ? sanitiseState(JSON.parse(raw)) : defaultState();
+    if (raw && !localStorage.getItem(SAVE_KEY)) localStorage.setItem(SAVE_KEY, JSON.stringify(loaded));
+    return loaded;
+  } catch (error) {
+    console.warn('Save load failed:', error);
+    return defaultState();
+  }
+}
+function saveState() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
+  catch (error) { console.warn('Save failed:', error); }
+}
+function resetDailyIfNeeded() {
+  const today = todayKey();
+  if (state.play.date !== today) state.play = { date: today, seconds: 0 };
+  if (state.daily.date !== today) state.daily = { date: today, answers: 0, correct: 0, battles: 0, voice: 0, claimed: false };
+}
+function xpForLevel(level) { return 80 + level * 24 + Math.floor(level ** 1.35) * 6; }
+function getLevelProgress() { return clamp(state.xp / xpForLevel(state.level), 0, 1); }
+function masteryPercent(id) { return clamp(Number(state.mastery[id]?.score) || 0, 0, 100); }
+function completedCount() { return Object.keys(state.completedQuests).filter((id) => state.completedQuests[id]?.stars > 0).length; }
+function starsForQuest(id) { return state.completedQuests[id]?.stars || 0; }
+function regionStars(id) { return QUESTS.filter((quest) => quest.regionId === id).reduce((sum, quest) => sum + starsForQuest(quest.id), 0); }
+function regionUnlocked(id) { return id === 1 || QUESTS.filter((quest) => quest.regionId === id - 1).every((quest) => Boolean(state.completedQuests[quest.id])); }
+function nextQuest() { return QUESTS.find((quest) => !state.completedQuests[quest.id] && quest.id <= state.unlockedQuest) || QUESTS[Math.min(state.unlockedQuest - 1, QUESTS.length - 1)] || QUESTS[0]; }
+function getEquipmentStats() {
+  const equipped = Object.values(state.equipment).map((id) => ITEMS[id]).filter(Boolean);
+  const masteryBonus = Math.floor(Object.keys(TOPICS).reduce((sum, id) => sum + masteryPercent(id), 0) / 120);
+  return equipped.reduce((stats, itemData) => ({
+    maxHp: stats.maxHp + (itemData.hp || 0),
+    attack: stats.attack + (itemData.attack || 0),
+    defense: stats.defense + (itemData.defense || 0),
+    magic: stats.magic + (itemData.magic || 0)
+  }), { maxHp: 78 + state.level * 4, attack: 10 + state.level * 2 + masteryBonus, defense: 7 + state.level, magic: 8 + state.level + masteryBonus });
+}
+
+let state = loadState();
+let currentScreen = 'title';
+let selectedRegionId = 1;
+let selectedItemId = null;
+let inventoryFilter = 'all';
+let battle = null;
+let feedbackLocked = false;
+let orderSelection = [];
+let activeRecognition = null;
+let deferredInstallPrompt = null;
+let playTickHandle = null;
+let lastTickAt = Date.now();
+
+class AudioEngine {
+  constructor() {
+    this.ctx = null;
+    this.enabled = state.settings.sound;
+    this.musicTimer = null;
+    this.musicMode = 'title';
+    this.musicStep = 0;
+  }
+  unlock() {
+    if (!this.enabled) return;
+    if (!this.ctx) {
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (Context) this.ctx = new Context();
+    }
+    if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => {});
+  }
+  setEnabled(value) {
+    this.enabled = Boolean(value);
+    if (!this.enabled) this.stopMusic();
+    else { this.unlock(); this.startMusic(this.musicMode); }
+  }
+  osc(freq, duration = .12, type = 'sine', volume = .05, delay = 0, slide = null) {
+    if (!this.enabled || !this.ctx) return;
+    const at = this.ctx.currentTime + delay;
+    const oscillator = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(freq, at);
+    if (slide) oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, slide), at + duration);
+    gain.gain.setValueAtTime(.0001, at);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, volume * clamp(state.settings.sfxVolume, 0, 1)), at + .012);
+    gain.gain.exponentialRampToValueAtTime(.0001, at + duration);
+    oscillator.connect(gain).connect(this.ctx.destination);
+    oscillator.start(at);
+    oscillator.stop(at + duration + .03);
+  }
+  noise(duration = .13, volume = .04, delay = 0) {
+    if (!this.enabled || !this.ctx) return;
+    const length = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < length; index += 1) data[index] = (Math.random() * 2 - 1) * (1 - index / length);
+    const source = this.ctx.createBufferSource();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1200;
+    gain.gain.value = volume * clamp(state.settings.sfxVolume, 0, 1);
+    source.buffer = buffer;
+    source.connect(filter).connect(gain).connect(this.ctx.destination);
+    source.start(this.ctx.currentTime + delay);
+  }
+  sfx(name) {
+    this.unlock();
+    const sounds = {
+      tap: () => { this.osc(520, .055, 'sine', .025); this.osc(760, .05, 'sine', .018, .035); },
+      open: () => [392, 523, 659].forEach((note, index) => this.osc(note, .18, 'triangle', .045, index * .06)),
+      correct: () => [659, 784, 988, 1318].forEach((note, index) => this.osc(note, .2, 'triangle', .055, index * .055)),
+      wrong: () => { this.osc(260, .18, 'sawtooth', .025, 0, 175); this.osc(180, .22, 'sine', .025, .08); },
+      slash: () => { this.noise(.12, .055); this.osc(1050, .12, 'sawtooth', .04, 0, 330); },
+      enemy: () => { this.osc(120, .25, 'square', .045, 0, 70); this.noise(.2, .03, .03); },
+      heal: () => [523, 659, 784, 1046].forEach((note, index) => this.osc(note, .3, 'sine', .04, index * .07)),
+      hint: () => [740, 880, 1110].forEach((note, index) => this.osc(note, .2, 'sine', .038, index * .075)),
+      ultimate: () => { [196,294,392,587,784,1175].forEach((note,index)=>this.osc(note,.38,index<2?'sawtooth':'triangle',.065,index*.065)); this.noise(.5,.06,.36); },
+      chest: () => [330, 392, 523, 659, 784, 1046].forEach((note, index) => this.osc(note, .28, 'triangle', .06, index * .075)),
+      receive: () => [784, 988, 1175, 1568].forEach((note, index) => this.osc(note, .25, 'sine', .05, index * .05)),
+      level: () => [392, 523, 659, 784, 1046, 1318].forEach((note, index) => this.osc(note, .32, 'triangle', .06, index * .085)),
+      boss: () => { this.osc(65, .8, 'sawtooth', .055, 0, 95); this.noise(.55, .035); },
+      defeat: () => [659, 523, 392, 262].forEach((note, index) => this.osc(note, .4, 'triangle', .04, index * .12))
+    };
+    (sounds[name] || sounds.tap)();
+  }
+  stopMusic() {
+    if (this.musicTimer) clearInterval(this.musicTimer);
+    this.musicTimer = null;
+  }
+  startMusic(mode = 'home') {
+    this.musicMode = mode;
+    this.stopMusic();
+    if (!this.enabled || !this.ctx) return;
+    const sets = {
+      title: { notes: [220, 330, 392, 494, 392, 330, 262, 294], tempo: 720, type: 'triangle' },
+      home: { notes: [262, 330, 392, 330, 294, 349, 440, 349], tempo: 650, type: 'sine' },
+      map: { notes: [196, 262, 330, 392, 330, 294, 247, 294], tempo: 580, type: 'triangle' },
+      battle: { notes: [110, 165, 147, 196, 110, 175, 147, 220], tempo: 360, type: 'sawtooth' },
+      story: { notes: [220, 277, 330, 370, 330, 277, 247, 277], tempo: 820, type: 'sine' },
+      reward: { notes: [392, 523, 659, 784, 659, 523, 784, 1046], tempo: 430, type: 'triangle' }
+    };
+    const config = sets[mode] || sets.home;
+    this.musicStep = 0;
+    const play = () => {
+      if (!this.enabled || !this.ctx) return;
+      const note = config.notes[this.musicStep % config.notes.length];
+      const volume = .018 * clamp(state.settings.musicVolume, 0, 1);
+      this.osc(note, .42, config.type, volume);
+      if (this.musicStep % 2 === 0) this.osc(note / 2, .5, 'sine', volume * .55);
+      this.musicStep += 1;
+    };
+    play();
+    this.musicTimer = setInterval(play, config.tempo);
+  }
+}
+const audio = new AudioEngine();
+
+function vibrate(pattern) {
+  if (state.settings.haptics && navigator.vibrate) navigator.vibrate(pattern);
+}
+function speak(text, rate = .88) {
+  if (!state.settings.voice || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  utterance.rate = rate;
+  utterance.pitch = 1.02;
+  const voices = speechSynthesis.getVoices();
+  utterance.voice = voices.find((voiceItem) => /^en-(US|GB)/.test(voiceItem.lang)) || voices.find((voiceItem) => voiceItem.lang.startsWith('en')) || null;
+  speechSynthesis.speak(utterance);
+}
+function toast(message, type = 'normal') {
+  const layer = $('#toast-layer');
+  if (!layer) return;
+  const node = document.createElement('div');
+  node.className = `toast ${type}`;
+  node.textContent = message;
+  layer.appendChild(node);
+  setTimeout(() => node.remove(), 3200);
+}
+function announce(message) { const node = $('#screen-reader-status'); if (node) node.textContent = message; }
+function screenFlash(color = '#fff') {
+  const layer = $('#fx-layer');
+  if (!layer || state.settings.reducedMotion) return;
+  const node = document.createElement('div');
+  node.className = 'screen-flash';
+  node.style.background = color;
+  layer.appendChild(node);
+  setTimeout(() => node.remove(), 380);
+}
+function shakeScreen() {
+  if (state.settings.reducedMotion) return;
+  const app = $('#app');
+  if (!app) return;
+  app.classList.remove('screen-shake');
+  void app.offsetWidth;
+  app.classList.add('screen-shake');
+  setTimeout(() => app.classList.remove('screen-shake'), 400);
+}
+function confetti(count = 45) {
+  if (state.settings.reducedMotion) return;
+  const layer = $('#fx-layer');
+  if (!layer) return;
+  const colors = ['#ffd96b', '#61dcff', '#ff6b75', '#a983ff', '#76e59c'];
+  for (let index = 0; index < count; index += 1) {
+    const node = document.createElement('i');
+    node.className = 'confetti';
+    node.style.setProperty('--x', `${Math.random() * 100}%`);
+    node.style.setProperty('--dx', `${(Math.random() - .5) * 240}px`);
+    node.style.setProperty('--d', `${1.8 + Math.random() * 1.6}s`);
+    node.style.setProperty('--r', `${Math.random() * 360}deg`);
+    node.style.setProperty('--c', sample(colors));
+    layer.appendChild(node);
+    setTimeout(() => node.remove(), 3600);
+  }
+}
+function addXp(amount) {
+  let levels = 0;
+  state.xp += amount;
+  while (state.level < 99 && state.xp >= xpForLevel(state.level)) {
+    state.xp -= xpForLevel(state.level);
+    state.level += 1;
+    levels += 1;
+  }
+  if (levels) { audio.sfx('level'); toast(`レベル ${state.level} に上がった！`, 'success'); }
+  return levels;
+}
+function addItem(id, count = 1, markNew = true) {
+  if (!ITEMS[id]) return false;
+  state.inventory[id] = (state.inventory[id] || 0) + count;
+  if (markNew && !state.newItems.includes(id)) state.newItems.push(id);
+  return true;
+}
+function useItem(id) {
+  if (!state.inventory[id]) return false;
+  state.inventory[id] -= 1;
+  if (state.inventory[id] <= 0) delete state.inventory[id];
+  saveState();
+  return true;
+}
+function updateMastery(topicId, correct) {
+  const mastery = state.mastery[topicId] || { attempts: 0, correct: 0, score: 0, lastSeen: null };
+  mastery.attempts += 1;
+  if (correct) mastery.correct += 1;
+  mastery.lastSeen = Date.now();
+  mastery.score = clamp(Math.round((mastery.correct / mastery.attempts) * 70 + Math.min(mastery.attempts, 10) * 3), 0, 100);
+  state.mastery[topicId] = mastery;
+}
+function updateDaily(field, amount = 1) {
+  resetDailyIfNeeded();
+  state.daily[field] = Math.max(0, (state.daily[field] || 0) + amount);
+}
+
+function selectedCharacterId(avatar = state.profile.avatar) {
+  return ({ hero: 'ray', guardian: 'emma', rogue: 'kai', mage: 'luna' })[avatar] || 'ray';
+}
+function avatarImage(avatar = state.profile.avatar) {
+  const hero = CHARACTERS[selectedCharacterId(avatar)];
+  return hero.portrait || hero.image;
+}
+function battleImage(avatar = state.profile.avatar) {
+  return CHARACTERS[selectedCharacterId(avatar)].battleImage;
+}
+function heroCardImage(avatar = state.profile.avatar) {
+  const hero = CHARACTERS[selectedCharacterId(avatar)];
+  return hero.card || hero.image;
+}
+function heroCutinImage(avatar = state.profile.avatar) {
+  const hero = CHARACTERS[selectedCharacterId(avatar)];
+  return hero.cutin || hero.image;
+}
+function heroStatBars(hero) {
+  const labels = [['power','攻撃'],['guard','守り'],['magic','魔法']];
+  return `<div class="v51-stat-bars">${labels.map(([key,label]) => `<div><span>${label}</span><i>${Array.from({length:5},(_,index)=>`<b class="${index < hero.stats[key] ? 'on' : ''}"></b>`).join('')}</i></div>`).join('')}</div>`;
+}
+function companionCharacters() {
+  const selected = selectedCharacterId();
+  return ['ray', 'emma', 'kai', 'luna'].filter((id) => id !== selected).map((id) => CHARACTERS[id]);
+}
+function hudHTML() {
+  const progress = Math.round(getLevelProgress() * 100);
+  return `<header class="hud">
+    <div class="player-chip"><img class="player-avatar" src="${avatarImage()}" alt="${escapeHTML(state.profile.name)}のアバター"><div class="player-meta"><div class="player-name-row"><span class="player-name">${escapeHTML(state.profile.name)}</span><span class="player-level">Lv.${state.level}</span></div><div class="xp-track" aria-label="経験値 ${progress}%"><i style="width:${progress}%"></i></div></div></div>
+    <div class="hud-currencies"><div class="currency"><i class="coin-dot"></i><span>${state.gold.toLocaleString()}</span></div><div class="currency"><i class="gem-dot"></i><span>${state.gems.toLocaleString()}</span></div></div>
+  </header>`;
+}
+const NAV_ITEMS = [['home', 'home', 'ホーム'], ['map', 'map', '冒険'], ['party', 'party', 'パーティ'], ['inventory', 'bag', 'バッグ'], ['codex', 'book', '図鑑']];
+function navHTML(active) {
+  return `<nav class="bottom-nav" aria-label="メインメニュー">${NAV_ITEMS.map(([screen, iconName, label]) => `<button class="nav-btn ${active === screen ? 'active' : ''}" data-nav="${screen}" aria-label="${label}">${icon(iconName)}<span>${label}</span>${screen === 'inventory' && state.newItems.length ? '<i class="nav-new"></i>' : ''}</button>`).join('')}</nav>`;
+}
+function shellHTML(body, active) { return `${hudHTML()}${body}${navHTML(active)}`; }
+function particlesHTML(count = 22) {
+  return `<div class="title-particles">${Array.from({ length: count }, () => `<i style="left:${Math.random() * 100}%;top:${35 + Math.random() * 65}%;--d:${5 + Math.random() * 6}s;--x:${-35 + Math.random() * 70}px;animation-delay:${-Math.random() * 9}s"></i>`).join('')}</div>`;
+}
+function setScreen(name, renderFunction, music = 'home') {
+  currentScreen = name;
+  state.lastScreen = name;
+  saveState();
+  const app = $('#app');
+  app.innerHTML = renderFunction();
+  audio.startMusic(music);
+  bindGlobalNavigation();
+  window.scrollTo(0, 0);
+}
+
+/* ---------- navigation, title, story, home and world map ---------- */
+function bindGlobalNavigation() {
+  $$('[data-nav]').forEach((button) => button.addEventListener('click', () => {
+    audio.sfx('tap');
+    navigate(button.dataset.nav);
+  }));
+}
+function navigate(screen) {
+  if (state.play.seconds >= MAX_DAILY_SECONDS && ['map', 'battle'].includes(screen)) {
+    renderTimeLimit();
+    return;
+  }
+  const routes = {
+    title: renderTitle,
+    home: renderHome,
+    map: renderMap,
+    party: renderParty,
+    inventory: renderInventory,
+    codex: renderCodex,
+    skills: renderSkills,
+    daily: renderDaily,
+    settings: renderSettings
+  };
+  (routes[screen] || renderHome)();
+}
+function showModal(html) {
+  const layer = $('#modal-layer');
+  layer.innerHTML = html;
+  layer.hidden = false;
+  const focusable = layer.querySelector('button,input,[tabindex]:not([tabindex="-1"])');
+  setTimeout(() => focusable?.focus(), 10);
+}
+function closeModal() {
+  if (activeRecognition) {
+    try { activeRecognition.abort(); } catch (_) {}
+    activeRecognition = null;
+  }
+  const layer = $('#modal-layer');
+  layer.hidden = true;
+  layer.innerHTML = '';
+}
+function renderTitle() {
+  currentScreen = 'title';
+  state.lastScreen = 'title';
+  saveState();
+  const hasAdventure = state.profileComplete && (state.unlockedQuest > 1 || completedCount() > 0 || Object.keys(state.inventory).length > 3);
+  const app = $('#app');
+  app.innerHTML = `<main class="screen title-screen cinematic-vignette" aria-label="タイトル画面">
+    <div class="title-art"></div><div class="grain"></div>${particlesHTML(30)}
+    <div class="title-content">
+      <div class="eyebrow">英語で強くなる冒険RPG</div>
+      <h1 class="title-logo">ENGLISH <span>LEGENDS</span></h1>
+      <p class="title-tagline">言葉を力に変え、失われた王国を救え。</p>
+      <div class="title-actions">
+        <button id="title-start" class="btn btn-gold btn-big">${icon('sword')}<span>${hasAdventure ? '冒険を続ける' : '新しい冒険を始める'}</span></button>
+        ${hasAdventure ? `<button id="title-new" class="btn btn-ghost">最初から遊ぶ</button>` : ''}
+        <button id="title-settings" class="btn btn-ghost">${icon('gear')}<span>音・遊び方の設定</span></button>
+      </div>
+    </div>
+    <small class="title-credit">オリジナルRPG · 学習データはこの端末に保存</small>
+    <small class="title-version">VER. ${APP_VERSION}</small>
+  </main>`;
+  audio.startMusic('title');
+  $('#title-start').addEventListener('click', () => {
+    audio.unlock(); audio.sfx('open');
+    if (state.pendingReward && !state.pendingReward.claimed) { renderReward(); return; }
+    if (!state.profileComplete) openOnboarding();
+    else renderHome();
+  });
+  $('#title-new')?.addEventListener('click', confirmReset);
+  $('#title-settings').addEventListener('click', () => {
+    audio.unlock();
+    if (!state.profileComplete) openQuickSettings(); else renderSettings();
+  });
+}
+function openOnboarding() {
+  let avatar = state.profile.avatar || 'hero';
+  currentScreen = 'onboarding';
+  state.lastScreen = 'onboarding';
+  saveState();
+  const heroIds = ['ray','emma','kai','luna'];
+  const renderPreview = () => {
+    const hero = CHARACTERS[selectedCharacterId(avatar)];
+    const preview = $('#v5-hero-preview');
+    if (!preview) return;
+    preview.className = `v5-hero-preview hero-${hero.color}`;
+    preview.innerHTML = `<div class="v5-preview-aura"></div><img src="${hero.card || hero.image}" alt="${escapeHTML(hero.name)}"><div class="v5-preview-copy"><span>${escapeHTML(hero.role)} · ${escapeHTML(hero.style)}</span><strong>${escapeHTML(hero.name)}</strong><em>${escapeHTML(hero.tagline)}</em><p>${escapeHTML(hero.desc)}</p>${heroStatBars(hero)}<div class="v51-hero-ability"><span>いつもの力</span><strong>${escapeHTML(hero.passive)}</strong></div><div class="v5-skill-pill">必殺技：${escapeHTML(hero.ultimate)}</div></div>`;
+  };
+  $('#app').innerHTML = `<main class="screen v5-select-screen cinematic-vignette">
+    <div class="v5-select-bg"></div><div class="grain"></div>
+    <header class="v5-select-head"><button id="onboarding-cancel" class="btn btn-ghost">${icon('arrow')} 戻る</button><div><div class="eyebrow">NEW ADVENTURE</div><h1>君の主人公を選ぼう</h1><p>強さは同じ。戦い方と得意なサポートが少しずつ違います。</p></div></header>
+    <div class="v5-select-layout">
+      <section id="v5-hero-preview" class="v5-hero-preview"></section>
+      <section class="v5-select-panel panel">
+        <div class="v5-step"><span>1</span><div><strong>主人公を選ぶ</strong><small>気になるキャラクターをタップ</small></div></div>
+        <div class="v5-hero-grid" role="radiogroup" aria-label="主人公を選ぶ">
+          ${heroIds.map((id)=>{const hero=CHARACTERS[id];return `<button type="button" class="v5-hero-choice hero-${hero.color} ${hero.avatar===avatar?'selected':''}" data-avatar="${hero.avatar}" role="radio" aria-checked="${hero.avatar===avatar}"><img src="${hero.card || hero.image}" alt=""><span><strong>${hero.name}</strong><small>${hero.role}</small><em>${hero.style}</em></span><i>${hero.avatar===avatar?'選択中':'選ぶ'}</i></button>`;}).join('')}
+        </div>
+        <div class="v5-step"><span>2</span><div><strong>冒険で呼ばれる名前</strong><small>あとから変更できます</small></div></div>
+        <label class="sr-only" for="adventurer-name">冒険者の名前</label>
+        <input id="adventurer-name" class="text-input v5-name-input" maxlength="16" autocomplete="off" value="${escapeHTML(state.profile.name)}" placeholder="名前を入力">
+        <button id="onboarding-confirm" class="btn btn-gold btn-big v5-start-button">${icon('sword')} この主人公で冒険を始める</button>
+        <div class="v5-mint-tip"><img src="${CHARACTERS.mint.image}" alt="ミント"><p><strong>相棒のミント</strong><br>まちがえても大丈夫。ぼくがヒントを出すよ！</p></div>
+      </section>
+    </div>
+  </main>`;
+  audio.startMusic('title');
+  renderPreview();
+  $$('[data-avatar]').forEach((button) => button.addEventListener('click', () => {
+    avatar = button.dataset.avatar;
+    $$('[data-avatar]').forEach((itemButton) => {
+      const selected = itemButton === button;
+      itemButton.classList.toggle('selected', selected);
+      itemButton.setAttribute('aria-checked', String(selected));
+      const badge = itemButton.querySelector('i'); if (badge) badge.textContent = selected ? '選択中' : '選ぶ';
+    });
+    renderPreview(); audio.sfx('tap');
+  }));
+  $('#onboarding-cancel').addEventListener('click', renderTitle);
+  $('#onboarding-confirm').addEventListener('click', () => {
+    const value = $('#adventurer-name').value.trim().slice(0, 16);
+    state.profile.name = value || CHARACTERS[selectedCharacterId(avatar)].name;
+    state.profile.avatar = avatar;
+    state.profileComplete = true;
+    state.lastScreen = 'home';
+    saveState();
+    audio.sfx('level');
+    playStory([
+      { speaker: '女王', text: `${state.profile.name}、王国の言葉が消えはじめています。力を貸してください。` },
+      { speaker: 'ミント', text: 'ぼくはミント！ 英語の言葉を見つけると、剣と魔法に力が戻るんだ。' },
+      { speaker: 'ミント', text: '最初の場所は「星明かりの森」。This と That から、一緒に始めよう！' }
+    ], renderHome);
+  });
+}
+function openQuickSettings() {
+  showModal(`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
+    <div class="eyebrow">設定</div><h2 id="quick-settings-title">音の設定</h2>
+    <p>最初のタップ後からBGMと効果音が鳴ります。端末が消音モードの場合は音量設定も確認してください。</p>
+    <div class="setting-row panel"><div><h3>音楽と効果音</h3><p>冒険のBGM、正解・宝箱・攻撃の演出音</p></div><button id="quick-sound" class="toggle ${state.settings.sound ? 'on' : ''}" aria-pressed="${state.settings.sound}"><i></i></button></div>
+    <div class="modal-actions"><button id="quick-close" class="btn btn-gold">閉じる</button></div>
+  </section>`);
+  $('#quick-sound').addEventListener('click', (event) => {
+    state.settings.sound = !state.settings.sound;
+    event.currentTarget.classList.toggle('on', state.settings.sound);
+    event.currentTarget.setAttribute('aria-pressed', String(state.settings.sound));
+    audio.setEnabled(state.settings.sound);
+    saveState();
+  });
+  $('#quick-close').addEventListener('click', closeModal);
+}
+function confirmReset() {
+  showModal(`<section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="reset-title">
+    <div class="eyebrow">冒険の書</div><h2 id="reset-title">冒険の書を消しますか？</h2>
+    <p>レベル、アイテム、冒険の進み具合、英語理解度がすべて初期状態に戻ります。この操作は取り消せません。</p>
+    <div class="modal-actions"><button id="reset-cancel" class="btn btn-ghost">やめる</button><button id="reset-confirm" class="btn btn-red">すべて消す</button></div>
+  </section>`);
+  $('#reset-cancel').addEventListener('click', closeModal);
+  $('#reset-confirm').addEventListener('click', () => {
+    state = defaultState();
+    saveState(); closeModal(); audio.sfx('defeat'); renderTitle();
+  });
+}
+function playStory(lines, onComplete = renderHome, art = 'queen') {
+  let index = 0;
+  const speakerPortrait = (speaker) => speaker === 'ミント' ? CHARACTERS.mint.image : speaker === '女王' ? 'assets/hero/queen.webp' : avatarImage();
+  const renderLine = () => {
+    const line = lines[index];
+    currentScreen = 'story';
+    $('#app').innerHTML = `<main class="screen story-screen v5-story cinematic-vignette">
+      <div class="story-art"></div><div class="grain"></div>
+      <div class="v5-story-chapter"><span>CHAPTER 1</span><strong>星明かりの森</strong></div>
+      <button id="story-skip" class="btn btn-ghost skip-btn">スキップ</button>
+      <div class="story-overlay"><div class="dialogue-box v5-dialogue-box">
+        <img class="v5-speaker-portrait" src="${speakerPortrait(line.speaker)}" alt="${escapeHTML(line.speaker)}">
+        <div class="v5-dialogue-copy"><span class="speaker">${escapeHTML(line.speaker)}</span><p class="dialogue-text">${escapeHTML(line.text)}</p></div>
+        <div class="dialogue-actions"><span class="v5-story-count">${index+1} / ${lines.length}</span><button id="story-next" class="btn btn-gold">${index === lines.length - 1 ? '冒険へ' : '次へ'} ${icon('arrow')}</button></div>
+      </div></div>
+    </main>`;
+    audio.startMusic('story');
+    $('#story-next').addEventListener('click', () => { audio.sfx('tap'); index += 1; if (index >= lines.length) onComplete(); else renderLine(); });
+    $('#story-skip').addEventListener('click', onComplete);
+  };
+  renderLine();
+}
+function renderHome() {
+  resetDailyIfNeeded();
+  const quest = nextQuest();
+  const topicData = TOPICS[quest.topicId];
+  const region = REGIONS.find((entry)=>entry.id===quest.regionId) || REGIONS[0];
+  const regionQuests = QUESTS.filter((entry)=>entry.regionId===region.id);
+  const completedInRegion = regionQuests.filter((entry)=>starsForQuest(entry.id)>0).length;
+  const remaining = Math.max(0, MAX_DAILY_SECONDS - state.play.seconds);
+  const missionsDone = DAILY_MISSIONS.filter((mission) => state.daily[mission.field] >= mission.target).length;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const chapterPercent = Math.round((completedInRegion / regionQuests.length) * 100);
+  setScreen('home', () => `<main class="screen home-screen v5-home-screen">
+    ${hudHTML()}
+    <div class="home-body v5-home-body cinematic-vignette"><div class="grain"></div><div class="home-content v5-home-content">
+      <section class="v5-home-top">
+        <div class="v5-home-copy"><div class="eyebrow">CHAPTER ${region.id}</div><h1>${escapeHTML(region.name)}</h1><p>${escapeHTML(state.profile.name)}とミントの冒険。英語の言葉を取り戻して、森の奥へ進もう。</p><div class="v5-chapter-meter"><i style="width:${chapterPercent}%"></i><span>${completedInRegion} / ${regionQuests.length} クリア</span></div></div>
+        <button class="v5-party-portrait hero-${hero.color}" data-home-action="party" aria-label="パーティを見る"><div class="v5-party-glow"></div><img class="v5-home-hero" src="${hero.card || hero.image}" alt="${escapeHTML(state.profile.name)}"><img class="v5-home-mint" src="${CHARACTERS.mint.image}" alt="ミント"><span><small>${escapeHTML(hero.role)} · ${escapeHTML(hero.style)}</small><strong>${escapeHTML(state.profile.name)}</strong><em>${escapeHTML(hero.ultimate)}</em></span></button>
+      </section>
+      <section class="v5-quest-focus panel ornate">
+        <div class="v5-quest-badge">次の冒険</div>
+        <div class="v5-quest-main"><div><span class="v5-quest-number">QUEST ${String(quest.id).padStart(2,'0')}</span><h2>${escapeHTML(quest.name)}</h2><p><strong>${escapeHTML(topicData.name)}</strong>　${escapeHTML(quest.description)}</p><div class="v5-quest-reward"><span>目安 5分</span><span>経験値 +${quest.xp}</span><span>${quest.isBoss?'ボス戦':'通常戦'}</span></div></div><button id="continue-quest" class="btn btn-gold btn-big">${icon('sword')} 冒険へ</button></div>
+      </section>
+      <section class="v5-chapter-road" aria-label="この章の進み具合">
+        ${regionQuests.map((entry,index)=>{const done=starsForQuest(entry.id)>0;const current=entry.id===quest.id;const locked=entry.id>state.unlockedQuest;return `<button class="v5-road-node ${done?'done':''} ${current?'current':''} ${locked?'locked':''}" data-road-quest="${entry.id}" ${locked?'disabled':''}><span>${done?'✓':entry.isBoss?'BOSS':index+1}</span><strong>${escapeHTML(entry.name)}</strong><small>${done?`${starsForQuest(entry.id)}★ クリア`:current?'ここから':'未解放'}</small></button>`;}).join('<i class="v5-road-line"></i>')}
+      </section>
+      <section class="v5-home-actions">
+        <button class="v5-action-card panel" data-home-action="map"><span>${icon('map')}</span><div><strong>世界地図</strong><small>次の地域を見る</small></div></button>
+        <button class="v5-action-card panel" data-home-action="skills"><span>${icon('spark')}</span><div><strong>英語の力</strong><small>覚えたことを確認</small></div></button>
+        <button class="v5-action-card panel" data-home-action="daily"><span>${icon('chest')}</span><div><strong>今日の目標</strong><small>${missionsDone}/4 できた</small></div></button>
+        <button class="v5-action-card panel" data-home-action="settings"><span>${icon('gear')}</span><div><strong>設定</strong><small>残り ${formatTime(remaining)}</small></div></button>
+      </section>
+    </div></div>
+    ${navHTML('home')}
+  </main>`, 'home');
+  $('#continue-quest').addEventListener('click', () => startQuestFlow(quest.id));
+  $$('[data-road-quest]').forEach((button)=>button.addEventListener('click',()=>startQuestFlow(Number(button.dataset.roadQuest))));
+  $$('[data-home-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.homeAction)));
+}
+function routeHTML(from, to) {
+  const dx = to.x - from.x; const dy = to.y - from.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  return `<i class="map-route" style="left:${from.x}%;top:${from.y}%;width:${length}%;transform:rotate(${angle}deg)"></i>`;
+}
+function renderMap(openRegion = null) {
+  selectedRegionId = openRegion || selectedRegionId || Math.ceil(state.unlockedQuest / 4);
+  setScreen('map', () => `<main class="screen map-screen">
+    ${hudHTML()}<div class="map-body"><div class="grain"></div>
+      <section class="map-title"><div class="eyebrow">世界地図</div><h1>冒険する場所を選ぼう</h1><p>エリアを選んで、英語の力を取り戻そう。</p></section>
+      ${REGIONS.slice(0,-1).map((region,index) => routeHTML(region, REGIONS[index+1])).join('')}
+      ${REGIONS.map((region) => {
+        const unlocked = regionUnlocked(region.id);
+        const complete = QUESTS.filter((quest) => quest.regionId === region.id).every((quest) => starsForQuest(quest.id));
+        const stars = regionStars(region.id);
+        return `<button class="region-node ${!unlocked ? 'locked' : ''} ${complete ? 'complete' : ''}" data-region="${region.id}" style="left:calc(${region.x}% - 36px);top:calc(${region.y}% - 36px)" aria-label="${escapeHTML(region.name)} ${unlocked ? '' : '未解放'}"><span class="node-rune">${unlocked ? region.rune : icon('lock')}</span><span class="node-label">${escapeHTML(region.name)}</span><span class="stars">${'★'.repeat(Math.floor(stars/4))}${'☆'.repeat(3-Math.floor(stars/4))}</span></button>`;
+      }).join('')}
+      <div class="map-legend">金：進行中　青：地域クリア　灰：未解放</div>
+      <aside id="quest-drawer" class="quest-drawer" aria-label="エリアの冒険"></aside>
+    </div>${navHTML('map')}
+  </main>`, 'map');
+  $$('[data-region]').forEach((button) => button.addEventListener('click', () => {
+    const id = Number(button.dataset.region);
+    if (!regionUnlocked(id)) { audio.sfx('wrong'); toast('前の地域をクリアすると開きます。', 'error'); return; }
+    audio.sfx('open'); selectedRegionId = id; renderQuestDrawer(id);
+  }));
+  if (openRegion) setTimeout(() => renderQuestDrawer(openRegion), 60);
+}
+function renderQuestDrawer(regionId) {
+  const region = REGIONS.find((entry) => entry.id === regionId);
+  const quests = QUESTS.filter((quest) => quest.regionId === regionId);
+  const drawer = $('#quest-drawer');
+  if (!drawer || !region) return;
+  drawer.innerHTML = `<div class="drawer-handle"></div><div class="drawer-head"><div><div class="eyebrow">エリア ${region.id}</div><h2>${escapeHTML(region.name)}</h2><p>${escapeHTML(region.subtitle)} · ${regionStars(region.id)}/12 スター</p></div><button id="drawer-close" class="btn btn-icon btn-ghost" aria-label="閉じる">${icon('close')}</button></div>
+    <div class="quest-list">${quests.map((quest) => {
+      const unlocked = quest.id <= state.unlockedQuest;
+      const stars = starsForQuest(quest.id);
+      const topicData = TOPICS[quest.topicId];
+      return `<button class="quest-card ${unlocked ? '' : 'locked'}" data-quest="${quest.id}" ${unlocked ? '' : 'disabled'}><span class="quest-number">${quest.isBoss ? icon('crown') : quest.index}</span><span><h3>${escapeHTML(quest.name)}</h3><p>${topicData.grade} · ${escapeHTML(topicData.name)} — ${escapeHTML(topicData.summary)}</p></span><span class="quest-stars">${'★'.repeat(stars)}${'☆'.repeat(3-stars)}</span></button>`;
+    }).join('')}</div>`;
+  drawer.classList.add('open');
+  $('#drawer-close').addEventListener('click', () => drawer.classList.remove('open'));
+  $$('[data-quest]', drawer).forEach((button) => button.addEventListener('click', () => startQuestFlow(Number(button.dataset.quest))));
+}
+function startQuestFlow(questId) {
+  if (state.play.seconds >= MAX_DAILY_SECONDS) { renderTimeLimit(); return; }
+  const quest = QUESTS.find((entry) => entry.id === Number(questId));
+  if (!quest || quest.id > state.unlockedQuest) { toast('まだ挑戦できない冒険です。', 'error'); return; }
+  const region = REGIONS.find((entry) => entry.id === quest.regionId);
+  const monster = MONSTERS[quest.monsterId];
+  audio.sfx(quest.isBoss ? 'boss' : 'open');
+  const storyLines = [];
+  if (!state.regionStoriesSeen.includes(region.id)) {
+    storyLines.push({ speaker: '女王', text: region.story[0] }, { speaker: 'ミント', text: region.story[1] });
+  }
+  storyLines.push({ speaker: 'ミント', text: `${monster.name}が現れた！ 「${TOPICS[quest.topicId].name}」の英語を使って戦おう。` });
+  const begin = () => {
+    if (!state.regionStoriesSeen.includes(region.id)) state.regionStoriesSeen.push(region.id);
+    saveState(); startBattle(quest.id);
+  };
+  playStory(storyLines, begin);
+}
+
+/* ---------- battle engine ---------- */
+function buildQuestionQueue(quest) {
+  const mainQuestions = shuffle(TOPICS[quest.topicId].questions).map((question) => ({ ...question }));
+  const earlierTopics = TOPIC_SEQUENCE.slice(0, Math.max(1, quest.id - 1));
+  const reviewQuestions = shuffle(earlierTopics).slice(0, quest.isBoss ? 3 : 1).map((topicId) => ({ ...sample(TOPICS[topicId].questions), review: true }));
+  const desired = quest.isBoss ? 7 : 5;
+  const pool = [...mainQuestions, ...reviewQuestions];
+  while (pool.length < desired) pool.push({ ...sample(mainQuestions) });
+  return pool.slice(0, desired);
+}
+function startBattle(questId) {
+  const quest = QUESTS.find((entry) => entry.id === Number(questId));
+  if (!quest) { renderMap(); return; }
+  const monster = MONSTERS[quest.monsterId];
+  const stats = getEquipmentStats();
+  const maxHp = Math.round(monster.baseHp + quest.level * 8 + (quest.isBoss ? 80 : 0));
+  battle = {
+    id: randomId(), quest, monster,
+    maxHp, enemyHp: maxHp,
+    playerMaxHp: stats.maxHp, playerHp: stats.maxHp,
+    round: 0, correct: 0, wrong: 0, combo: 0, bestCombo: 0,
+    queue: buildQuestionQueue(quest), currentQuestion: null,
+    voiceAttempted: false, potionUsed: false, hintUsed: false, finished: false,
+    magic: 0, ultimateUses: 0, lastGrade: '', questionStartedAt: Date.now(),
+    startedAt: Date.now()
+  };
+  feedbackLocked = false;
+  orderSelection = [];
+  currentScreen = 'battle';
+  state.lastScreen = 'battle';
+  saveState();
+  renderBattleShell();
+  renderNextBattleQuestion();
+  audio.startMusic('battle');
+  if (quest.isBoss) { audio.sfx('boss'); vibrate([80,50,100]); }
+}
+function battleBiome(monster) { return monster.biome === 'abyss' || monster.biome === 'shadow' ? 'void' : monster.biome; }
+function battleSparkHTML(count = 22) {
+  return `<div class="battle-sparks">${Array.from({length:count}, () => `<i style="left:${Math.random()*100}%;top:${45+Math.random()*55}%;--d:${3+Math.random()*4}s;--x:${-40+Math.random()*80}px;animation-delay:${-Math.random()*6}s"></i>`).join('')}</div>`;
+}
+function partyStatusHTML() {
+  const hpPercent = Math.round((battle.playerHp / battle.playerMaxHp) * 100);
+  const companions = companionCharacters().slice(0, 2);
+  return `<div class="party-status" aria-label="パーティ状態">
+    <div class="party-unit"><img src="${avatarImage()}" alt=""><div><strong>${escapeHTML(state.profile.name)}</strong><small>HP ${battle.playerHp}/${battle.playerMaxHp}</small><div class="hp-track"><i id="party-hp-bar" style="width:${hpPercent}%"></i></div></div></div>
+    ${companions.map((character) => `<div class="party-unit"><img src="${character.image}" alt=""><div><strong>${character.name}</strong><small>${character.role}</small><div class="hp-track"><i style="width:100%"></i></div></div></div>`).join('')}
+  </div>`;
+}
+function renderBattleShell() {
+  const hpPercent = Math.round((battle.enemyHp / battle.maxHp) * 100);
+  const playerPercent = Math.round((battle.playerHp / battle.playerMaxHp) * 100);
+  const topicData = TOPICS[battle.quest.topicId];
+  const hero = CHARACTERS[selectedCharacterId()];
+  $('#app').innerHTML = `<main class="screen battle-screen v5-battle-screen v51-battle-screen" aria-label="${escapeHTML(battle.monster.name)}との戦闘">
+    <section id="battle-scene" class="battle-scene v5-battle-scene" data-biome="${battleBiome(battle.monster)}">
+      <div class="v51-biome-depth"><i></i><i></i><i></i></div><div class="battle-cloud"></div>${battleSparkHTML(32)}<div class="grain"></div>
+      <div id="v5-battle-intro" class="v5-battle-intro"><span>${battle.quest.isBoss?'BOSS BATTLE':'MONSTER APPEARS'}</span><strong>${escapeHTML(battle.monster.name)}</strong><small>${escapeHTML(monsterBattleLine(battle.monster.id))}</small></div>
+      <header class="v5-enemy-hud"><div><span>${escapeHTML(battle.monster.title)}</span><strong>${escapeHTML(battle.monster.name)}</strong></div><em>Lv.${battle.quest.level}${battle.quest.isBoss?' · BOSS':''}</em><div class="v5-enemy-hp"><i id="enemy-hp-bar" style="width:${hpPercent}%"></i></div><small id="enemy-hp-text">HP ${battle.enemyHp.toLocaleString()} / ${battle.maxHp.toLocaleString()}</small></header>
+      <div class="v5-battle-actions"><button id="battle-hint" class="btn btn-ghost v51-hint-btn" aria-label="ミントヒント">${icon('hint')}<span>ミントヒント</span></button><button id="battle-potion" class="btn btn-ghost">${icon('potion')}<span>回復薬 ${state.inventory.crimsonPotion||0}</span></button><button id="battle-sound" class="btn btn-icon btn-ghost" aria-label="音を切り替える">${icon(state.settings.sound?'volume':'mute')}</button><button id="battle-retreat" class="btn btn-icon btn-ghost" aria-label="戦闘から退く">${icon('close')}</button></div>
+      <div id="monster-wrap" class="monster-wrap v5-monster-wrap"><div class="monster-shadow"></div><img id="monster-art" class="monster-art" src="${battle.monster.image}" alt="${escapeHTML(battle.monster.name)}"><div class="v5-monster-aura"></div><div id="monster-mood" class="v51-monster-mood">${escapeHTML(monsterBattleLine(battle.monster.id))}</div></div>
+      <div id="hero-battle" class="hero-battle v5-hero-battle hero-${hero.color}"><img src="${hero.card || hero.battleImage}" alt="戦う${escapeHTML(state.profile.name)}"><div class="v5-hero-sigil"></div><span class="v5-hero-card-label"><small>${escapeHTML(hero.role)}</small><strong>${escapeHTML(state.profile.name)}</strong><em>${escapeHTML(hero.skill)}</em></span></div>
+      <div class="v5-player-hud"><img src="${avatarImage()}" alt=""><div><span>${escapeHTML(state.profile.name)} · ${escapeHTML(hero.role)}</span><strong>HP ${battle.playerHp} / ${battle.playerMaxHp}</strong><div class="hp-track"><i id="party-hp-bar" style="width:${playerPercent}%"></i></div><small>${escapeHTML(hero.passive)}</small></div><img class="v5-mint-battle" src="${CHARACTERS.mint.image}" alt="ミント"></div>
+      <div class="v5-magic-gauge v51-magic-gauge"><span>英語パワー</span><div><i id="v5-magic-fill" style="width:${battle.magic}%"></i></div><strong><b id="magic-count">${battle.magic}</b>%</strong><button id="ultimate-skill" class="v51-ultimate-btn" disabled aria-label="必殺技 ${escapeHTML(hero.ultimate)}"><span>必殺技</span><b>${escapeHTML(hero.ultimate)}</b></button></div>
+      <div class="v5-topic-rune"><small>今回の英語</small><strong>${escapeHTML(topicData.name)}</strong></div>
+      <div id="battle-feedback-host"></div>
+    </section>
+    <section class="question-panel v5-question-panel" aria-label="英語問題"><div id="question-inner" class="question-inner v5-question-inner"></div></section>
+  </main>`;
+  $('#battle-sound').addEventListener('click', toggleBattleSound);
+  $('#battle-potion').addEventListener('click', useBattlePotion);
+  $('#battle-hint').addEventListener('click', useMintHint);
+  $('#battle-retreat').addEventListener('click', confirmRetreat);
+  $('#ultimate-skill').addEventListener('click', useUltimateSkill);
+  updateBattleHud();
+  setTimeout(()=>$('#v5-battle-intro')?.classList.add('hide'), state.settings.reducedMotion?50:1150);
+}
+function monsterBattleLine(monsterId) {
+  return ({
+    goblin:'「その答え、本当に合ってる？」', frostwolf:'「正しい言葉を見つけてみろ！」', flamewitch:'「単語の順番を入れかえてあげる！」',
+    stonegolem:'「正しい文だけが、この体を動かす。」', lanternimp:'「まちがえたら、ランプを消しちゃうぞ！」',
+    wraithknight:'「過去の言葉を思い出せるか？」', dreadrider:'「長い文から逃げるな。」', abyssdragon:'「すべての言葉を取り戻してみろ。」'
+  })[monsterId] || '英語の力で戦おう！';
+}
+function updateUltimateButton() {
+  if (!battle) return;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const button = $('#ultimate-skill');
+  if (!button) return;
+  const ready = battle.magic >= 100 && battle.enemyHp > 0 && !feedbackLocked && !battle.finished;
+  button.disabled = !ready;
+  button.classList.toggle('ready', ready);
+  button.innerHTML = `<span>${ready ? 'タップで発動！' : '必殺技'}</span><b>${escapeHTML(hero.ultimate)}</b>`;
+}
+function useMintHint() {
+  if (!battle || feedbackLocked) return;
+  if (battle.hintUsed) { toast('ミントヒントは、このバトルで一度だけ使えます。', 'error'); return; }
+  const question = battle.currentQuestion;
+  battle.hintUsed = true;
+  const button = $('#battle-hint'); if (button) { button.disabled = true; button.classList.add('used'); button.innerHTML = `${icon('check')}<span>ヒント使用済み</span>`; }
+  audio.sfx('hint'); vibrate([25,30,25]);
+  if (question.type === 'choice' || question.type === 'listen') {
+    const wrong = $$('[data-answer]').filter((entry) => Number(entry.dataset.answer) !== question.correct);
+    shuffle(wrong).slice(0, Math.min(2, wrong.length)).forEach((entry) => { entry.disabled = true; entry.classList.add('hint-off'); });
+    toast('ミントが、ちがう答えを2つ消してくれた！', 'success');
+  } else if (question.type === 'order') {
+    const first = question.target.split(' ')[0];
+    toast(`ミント：最初の言葉は「${first}」だよ！`, 'success');
+    $$('[data-add-word]').forEach((entry) => { if (entry.textContent.trim() === first) entry.classList.add('hint-word'); });
+  } else {
+    speak(question.target, .68);
+    const result = $('#voice-result'); if (result) result.textContent = `ミント：ゆっくり聞いてみよう。「${question.target}」`;
+  }
+  saveState();
+}
+function showUltimateCutin(hero) {
+  const layer = $('#fx-layer');
+  if (!layer) return;
+  const toastLayer = $('#toast-layer');
+  if (toastLayer) toastLayer.innerHTML = '';
+  const node = document.createElement('div');
+  node.className = `v51-ultimate-cutin hero-${hero.color}`;
+  node.innerHTML = `<div class="v51-cutin-art" style="--cutin-wide:url('${hero.cutin || hero.image}');--cutin-mobile:url('${hero.cutinMobile || hero.card || hero.image}')"></div><div class="v51-cutin-copy"><small>${escapeHTML(hero.role)} · ${escapeHTML(state.profile.name)}</small><strong>${escapeHTML(hero.ultimate)}</strong><span>ENGLISH LEGEND SKILL</span></div>`;
+  layer.appendChild(node);
+  setTimeout(() => node.classList.add('show'), 10);
+  setTimeout(() => node.classList.add('strike'), state.settings.reducedMotion ? 20 : 650);
+  setTimeout(() => node.remove(), state.settings.reducedMotion ? 500 : 1650);
+}
+function useUltimateSkill() {
+  if (!battle || battle.magic < 100 || feedbackLocked || battle.finished) return;
+  feedbackLocked = true;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const stats = getEquipmentStats();
+  battle.magic = 0;
+  battle.ultimateUses += 1;
+  let damage = Math.round(battle.maxHp * (battle.quest.isBoss ? .23 : .32) + stats.magic * 1.4 + 28);
+  if (hero.id === 'ray' && battle.combo >= 4) damage = Math.round(damage * 1.15);
+  if (hero.id === 'luna') damage = Math.round(damage * 1.18);
+  if (hero.id === 'emma') battle.playerHp = Math.min(battle.playerMaxHp, battle.playerHp + 24);
+  battle.enemyHp = Math.max(0, battle.enemyHp - damage);
+  battle.lastDamage = damage;
+  battle.lastResult = 'ultimate';
+  updateBattleHud();
+  showUltimateCutin(hero);
+  audio.sfx('ultimate'); vibrate([60,35,90,35,140]);
+  setTimeout(() => { screenFlash('#eafcff77'); shakeScreen(); animateMonsterHit(); showDamage(damage, true); }, state.settings.reducedMotion ? 20 : 730);
+  setTimeout(() => {
+    const defeated = battle.enemyHp <= 0;
+    const host = $('#battle-feedback-host');
+    if (host) host.innerHTML = `<div class="feedback-panel v5-feedback good v51-ultimate-result"><div class="v5-feedback-mark">★</div><div class="v5-feedback-copy"><h3>${escapeHTML(hero.ultimate)}！</h3><strong>${damage} ダメージ！</strong><p>${hero.id === 'emma' ? 'まもりの光でHPも少し回復した。' : '正解を重ねてためた英語パワーが、強い一撃になった。'}</p></div><button id="ultimate-next" class="btn btn-gold">${defeated ? '宝箱へ進む' : '戦闘を続ける'} ${icon('arrow')}</button></div>`;
+    $('#ultimate-next')?.addEventListener('click', () => {
+      host.innerHTML = '';
+      if (defeated) { finishBattle(); return; }
+      feedbackLocked = false;
+      updateUltimateButton();
+    });
+  }, state.settings.reducedMotion ? 80 : 1350);
+  saveState();
+}
+function toggleBattleSound() {
+  state.settings.sound = !state.settings.sound;
+  audio.setEnabled(state.settings.sound);
+  saveState();
+  const button = $('#battle-sound');
+  if (button) button.innerHTML = `${icon(state.settings.sound ? 'volume' : 'mute')}<span>${state.settings.sound ? '音あり' : '消音'}</span>`;
+  if (state.settings.sound) audio.sfx('open');
+}
+function useBattlePotion() {
+  if (!battle || feedbackLocked) return;
+  if (battle.potionUsed) { toast('この戦闘では、すでに回復薬を使いました。', 'error'); return; }
+  if (!state.inventory.crimsonPotion) { toast('回復薬を持っていません。', 'error'); return; }
+  if (battle.playerHp >= battle.playerMaxHp) { toast('HPは満タンです。'); return; }
+  if (!useItem('crimsonPotion')) return;
+  battle.potionUsed = true;
+  battle.playerHp = Math.min(battle.playerMaxHp, battle.playerHp + 35);
+  audio.sfx('heal'); vibrate(35); toast('回復薬でHPが35回復した！', 'success');
+  updateBattleHud();
+  const button = $('#battle-potion');
+  if (button) button.innerHTML = `${icon('potion')}<span>回復薬 ×${state.inventory.crimsonPotion || 0}</span>`;
+}
+function confirmRetreat() {
+  if (!battle) return;
+  showModal(`<section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="retreat-title"><div class="eyebrow">バトルをやめる</div><h2 id="retreat-title">このバトルをやめますか？</h2><p>このバトルで答えた記録は残りますが、クリア報酬は手に入りません。</p><div class="modal-actions"><button id="retreat-cancel" class="btn btn-ghost">戦闘を続ける</button><button id="retreat-confirm" class="btn btn-red">退く</button></div></section>`);
+  $('#retreat-cancel').addEventListener('click', closeModal);
+  $('#retreat-confirm').addEventListener('click', () => { closeModal(); battle = null; audio.sfx('defeat'); renderMap(selectedRegionId); });
+}
+function nextQuestionFromQueue() {
+  if (battle.round >= battle.queue.length) {
+    const extras = shuffle(TOPICS[battle.quest.topicId].questions);
+    battle.queue.push(...extras.map((question) => ({ ...question })));
+  }
+  return battle.queue[battle.round];
+}
+function questionInstruction(question) {
+  const defaults = {
+    choice: '正しい英文または意味を選ぼう。', listen: 'スピーカーを押して、聞こえた英文を選ぼう。',
+    order: '単語を正しい順番に並べよう。', voice: 'マイクを押して、表示された英文を唱えよう。'
+  };
+  return question.instruction || defaults[question.type] || '正しい答えを選ぼう。';
+}
+function renderNextBattleQuestion() {
+  if (!battle || battle.finished) return;
+  feedbackLocked = false;
+  orderSelection = [];
+  battle.questionStartedAt = Date.now();
+  battle.currentQuestion = nextQuestionFromQueue();
+  updateUltimateButton();
+  const question = battle.currentQuestion;
+  const topicData = TOPICS[question.topicId || battle.quest.topicId];
+  const inner = $('#question-inner');
+  if (!inner) return;
+  const total = battle.queue.length;
+  inner.innerHTML = `<div class="v5-question-top"><div><span class="question-topic">${question.review?'復習 · ':''}${escapeHTML(topicData.grade)}</span><strong>${escapeHTML(topicData.name)}</strong></div><div class="v5-turn-progress">${Array.from({length:Math.min(total,7)},(_,i)=>`<i class="${i<battle.round?'done':i===battle.round?'current':''}"></i>`).join('')}<span>${battle.round+1}/${total}</span></div></div><div class="v5-prompt-label">問題</div><div class="question-prompt">${escapeHTML(question.prompt)}</div><p class="question-instruction">${escapeHTML(questionInstruction(question))}</p><div id="question-content"></div>`;
+  renderQuestionContent(question);
+  announce(`問題。${question.prompt}`);
+}
+function renderQuestionContent(question) {
+  const content = $('#question-content');
+  if (!content) return;
+  if (question.type === 'choice' || question.type === 'listen') {
+    content.innerHTML = `${question.type === 'listen' ? `<button id="listen-question" class="btn btn-primary listen-btn">${icon('volume')}英文を聞く</button>` : ''}<div class="answer-grid" style="margin-top:${question.type === 'listen' ? '10px' : '0'}">${question.answers.map((answer,index) => `<button class="answer-btn" data-answer="${index}"><span class="answer-key">${String.fromCharCode(65+index)}</span><span>${escapeHTML(answer)}</span></button>`).join('')}</div>`;
+    $('#listen-question')?.addEventListener('click', () => { audio.sfx('tap'); speak(question.speech); });
+    $$('[data-answer]', content).forEach((button) => button.addEventListener('click', () => {
+      const selected = Number(button.dataset.answer);
+      resolveBattleAnswer(selected === question.correct, { selectedButton: button, correctIndex: question.correct });
+    }));
+    if (question.type === 'listen') setTimeout(() => speak(question.speech), 350);
+    return;
+  }
+  if (question.type === 'order') {
+    const shuffledWords = shuffle(question.words.map((word, index) => ({ word, id: `${index}-${Math.random()}` })));
+    battle.orderBank = shuffledWords;
+    content.innerHTML = `<div id="order-answer" class="order-answer" aria-label="並べた英文"></div><div id="order-bank" class="order-bank" aria-label="単語一覧"></div><div class="question-actions"><button id="order-reset" class="btn btn-ghost">やり直す</button><button id="order-submit" class="btn btn-gold">${icon('check')}この順番で唱える</button></div>`;
+    renderOrderWords();
+    $('#order-reset').addEventListener('click', () => { orderSelection = []; renderOrderWords(); audio.sfx('tap'); });
+    $('#order-submit').addEventListener('click', () => {
+      const sentence = orderSelection.map((entry) => entry.word).join(' ').replace(/\s+([?.!,])/g, '$1');
+      resolveBattleAnswer(normalizeSpeech(sentence) === normalizeSpeech(question.target), { orderSentence: sentence });
+    });
+    return;
+  }
+  if (question.type === 'voice') renderVoiceQuestion(question);
+}
+function renderOrderWords() {
+  const answer = $('#order-answer'); const bank = $('#order-bank');
+  if (!answer || !bank) return;
+  answer.innerHTML = orderSelection.map((entry,index) => `<button class="word-chip" data-remove-word="${index}">${escapeHTML(entry.word)}</button>`).join('');
+  const selectedIds = new Set(orderSelection.map((entry) => entry.id));
+  bank.innerHTML = battle.orderBank.filter((entry) => !selectedIds.has(entry.id)).map((entry) => `<button class="word-chip" data-add-word="${escapeHTML(entry.id)}">${escapeHTML(entry.word)}</button>`).join('');
+  $$('[data-add-word]', bank).forEach((button) => button.addEventListener('click', () => {
+    const entry = battle.orderBank.find((wordEntry) => wordEntry.id === button.dataset.addWord);
+    if (entry) orderSelection.push(entry);
+    audio.sfx('tap'); renderOrderWords();
+  }));
+  $$('[data-remove-word]', answer).forEach((button) => button.addEventListener('click', () => { orderSelection.splice(Number(button.dataset.removeWord), 1); audio.sfx('tap'); renderOrderWords(); }));
+}
+function renderVoiceQuestion(question) {
+  const content = $('#question-content');
+  const recognitionSupported = Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  content.innerHTML = `<div class="voice-box"><button id="voice-listen" class="btn btn-ghost">${icon('volume')}見本を聞く</button><div class="voice-target">${escapeHTML(question.target)}</div><button id="voice-mic" class="mic-orb" aria-label="マイクで英文を話す">${icon('mic')}</button><div id="voice-result" class="voice-result">${recognitionSupported ? 'タップして英語を話してください。' : 'このブラウザは自動音声認識に対応していません。選択式に切り替えられます。'}</div><div class="question-actions" style="justify-content:center"><button id="voice-fallback" class="btn btn-ghost">選択式で答える</button></div></div>`;
+  $('#voice-listen').addEventListener('click', () => { audio.sfx('tap'); speak(question.target, .78); });
+  $('#voice-mic').addEventListener('click', () => recognitionSupported ? beginSpeechRecognition(question) : renderVoiceFallback(question));
+  $('#voice-fallback').addEventListener('click', () => renderVoiceFallback(question));
+}
+function recordVoiceAttempt() {
+  if (battle?.voiceAttempted) return;
+  battle.voiceAttempted = true;
+  updateDaily('voice'); saveState();
+}
+function renderVoiceFallback(question) {
+  recordVoiceAttempt();
+  const alternatives = voiceAlternatives(question.target);
+  const answers = shuffle([question.target, ...alternatives]).slice(0, 4);
+  const content = $('#question-content');
+  content.innerHTML = `<div class="voice-box"><div class="voice-target">${escapeHTML(question.target)}</div><p class="voice-result">声に出して一度読んでから、同じ英文を選ぼう。</p><div class="answer-grid">${answers.map((answer,index) => `<button class="answer-btn" data-voice-answer="${index}"><span class="answer-key">${String.fromCharCode(65+index)}</span><span>${escapeHTML(answer)}</span></button>`).join('')}</div></div>`;
+  $$('[data-voice-answer]', content).forEach((button) => button.addEventListener('click', () => resolveBattleAnswer(answers[Number(button.dataset.voiceAnswer)] === question.target, { selectedButton: button, correctText: question.target })));
+}
+function voiceAlternatives(target) {
+  const variants = [
+    target.replace(/\b(is|are|am)\b/i, (match) => ({is:'are',are:'is',am:'is'})[match.toLowerCase()] || match),
+    target.replace(/\b(this|that)\b/i, (match) => match.toLowerCase() === 'this' ? 'That' : 'This'),
+    target.replace(/\b(can|will|have|has|would|could)\b/i, 'do'),
+    target.split(' ').slice().reverse().join(' ')
+  ].filter((value) => value && value !== target);
+  while (variants.length < 3) variants.push(`I ${target.replace(/^[A-Z][a-z]*\s*/, '').replace(/[.?!]$/, '')}.`);
+  return [...new Set(variants)].slice(0,3);
+}
+function beginSpeechRecognition(question) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) { renderVoiceFallback(question); return; }
+  if (activeRecognition) { try { activeRecognition.abort(); } catch (_) {} }
+  recordVoiceAttempt();
+  const resultNode = $('#voice-result'); const mic = $('#voice-mic');
+  activeRecognition = new Recognition();
+  activeRecognition.lang = 'en-US';
+  activeRecognition.interimResults = false;
+  activeRecognition.continuous = false;
+  activeRecognition.maxAlternatives = 3;
+  activeRecognition.onstart = () => { mic?.classList.add('listening'); if (resultNode) resultNode.textContent = '聞いています…'; audio.sfx('tap'); };
+  activeRecognition.onresult = (event) => {
+    const transcripts = Array.from(event.results[0] || []).map((result) => result.transcript);
+    const best = transcripts[0] || '';
+    const score = Math.max(...transcripts.map((value) => speechSimilarity(value, question.target)), 0);
+    if (resultNode) resultNode.textContent = `「${best}」と聞こえました。発音一致 ${Math.round(score*100)}%`;
+    resolveBattleAnswer(score >= .72, { spoken: best });
+  };
+  activeRecognition.onerror = (event) => {
+    mic?.classList.remove('listening');
+    const messages = { 'not-allowed': 'マイクの許可がありません。', 'no-speech': '声を聞き取れませんでした。', network: '音声認識ネットワークに接続できません。' };
+    if (resultNode) resultNode.textContent = messages[event.error] || '音声認識を開始できませんでした。';
+    setTimeout(() => renderVoiceFallback(question), 550);
+  };
+  activeRecognition.onend = () => { mic?.classList.remove('listening'); activeRecognition = null; };
+  try { activeRecognition.start(); }
+  catch (_) { renderVoiceFallback(question); }
+}
+function levenshtein(a, b) {
+  const matrix = Array.from({length:b.length+1}, (_, row) => [row]);
+  for (let col=0; col<=a.length; col+=1) matrix[0][col] = col;
+  for (let row=1; row<=b.length; row+=1) for (let col=1; col<=a.length; col+=1) matrix[row][col] = b[row-1] === a[col-1] ? matrix[row-1][col-1] : 1 + Math.min(matrix[row-1][col-1], matrix[row][col-1], matrix[row-1][col]);
+  return matrix[b.length][a.length];
+}
+function speechSimilarity(spoken, target) {
+  const a = normalizeSpeech(spoken); const b = normalizeSpeech(target);
+  if (!a || !b) return 0;
+  const charScore = 1 - levenshtein(a,b) / Math.max(a.length,b.length);
+  const targetWords = b.split(' '); const spokenWords = new Set(a.split(' '));
+  const wordScore = targetWords.filter((word) => spokenWords.has(word)).length / targetWords.length;
+  return clamp(charScore * .55 + wordScore * .45, 0, 1);
+}
+function resolveBattleAnswer(correct, meta = {}) {
+  if (!battle || feedbackLocked) return;
+  feedbackLocked = true;
+  if (activeRecognition) { try { activeRecognition.stop(); } catch (_) {} activeRecognition = null; }
+  const question = battle.currentQuestion;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const responseMs = Math.max(0, Date.now() - (battle.questionStartedAt || Date.now()));
+  updateDaily('answers');
+  updateMastery(question.topicId || battle.quest.topicId, correct);
+  if (correct) {
+    updateDaily('correct'); battle.correct += 1; battle.combo += 1; battle.bestCombo = Math.max(battle.bestCombo, battle.combo);
+    const stats = getEquipmentStats();
+    const minimumDamage = Math.ceil(battle.maxHp / (battle.quest.isBoss ? 6.4 : 5.2));
+    let damage = Math.max(minimumDamage, 22 + stats.attack + Math.floor(stats.magic * .55) + battle.combo * 5 + Math.floor(Math.random()*8));
+    const fast = responseMs <= 6500;
+    if (hero.id === 'ray' && battle.combo >= 2) damage = Math.round(damage * (1 + Math.min(.28, battle.combo * .035)));
+    if (hero.id === 'kai' && fast) damage = Math.round(damage * 1.18);
+    const regularDamageCap = Math.floor(battle.maxHp / (battle.quest.isBoss ? 5.7 : 3.7));
+    damage = Math.min(regularDamageCap, damage);
+    let magicGain = 31 + (battle.combo >= 3 ? 7 : 0) + (fast ? 2 : 0);
+    if (hero.id === 'kai' && fast) magicGain += 6;
+    if (hero.id === 'luna') magicGain += 8;
+    battle.magic = Math.min(100, battle.magic + magicGain);
+    battle.lastGrade = fast ? 'FAST!' : battle.combo >= 3 ? 'COMBO!' : 'GOOD!';
+    battle.enemyHp = Math.max(0, battle.enemyHp - damage);
+    battle.lastDamage = damage; battle.lastResult = 'correct';
+    audio.sfx('correct'); setTimeout(() => audio.sfx('slash'), 110); vibrate([35,30,45]);
+    animateHeroAttack(); animateMonsterHit(); showDamage(damage, true); screenFlash('#6ee8ff33');
+    meta.selectedButton?.classList.add('correct');
+  } else {
+    battle.wrong += 1; battle.combo = 0; battle.magic = Math.max(0, battle.magic - 16); battle.lastGrade = '';
+    const stats = getEquipmentStats();
+    let incoming = Math.max(4, battle.monster.attack + Math.floor(battle.quest.level/3) - Math.floor(stats.defense*.24) + Math.floor(Math.random()*5));
+    if (hero.id === 'emma') incoming = Math.max(3, Math.round(incoming * .72));
+    battle.playerHp = Math.max(0, battle.playerHp - incoming);
+    battle.lastDamage = incoming; battle.lastResult = 'wrong';
+    audio.sfx('wrong'); setTimeout(() => audio.sfx('enemy'), 120); vibrate([70,50,90]); shakeScreen(); showDamage(incoming, false); screenFlash('#ff5b4b22');
+    meta.selectedButton?.classList.add('wrong');
+  }
+  updateBattleHud();
+  saveState();
+  const defeated = battle.enemyHp <= 0;
+  const playerDefeated = battle.playerHp <= 0;
+  showBattleFeedback(correct, question, defeated, playerDefeated);
+}
+function animateHeroAttack() {
+  const node = $('#hero-battle'); if (!node || state.settings.reducedMotion) return;
+  node.classList.remove('attack'); void node.offsetWidth; node.classList.add('attack'); setTimeout(() => node.classList.remove('attack'), 550);
+}
+function animateMonsterHit() {
+  const node = $('#monster-art'); if (!node || state.settings.reducedMotion) return;
+  node.classList.remove('hit'); void node.offsetWidth; node.classList.add('hit'); setTimeout(() => node.classList.remove('hit'), 520);
+}
+function showDamage(amount, enemyTarget) {
+  const scene = $('#battle-scene'); if (!scene) return;
+  const node = document.createElement('div'); node.className = 'damage-number'; node.textContent = enemyTarget ? `${amount} ダメージ` : `-${amount} HP`;
+  if (!enemyTarget) { node.style.left = '20%'; node.style.color = '#ffb0a8'; }
+  scene.appendChild(node); setTimeout(() => node.remove(), 1000);
+}
+function updateBattleHud() {
+  if (!battle) return;
+  const enemyPercent = Math.round((battle.enemyHp / battle.maxHp) * 100);
+  const playerPercent = Math.round((battle.playerHp / battle.playerMaxHp) * 100);
+  if ($('#enemy-hp-bar')) $('#enemy-hp-bar').style.width = `${enemyPercent}%`;
+  if ($('#enemy-hp-text')) $('#enemy-hp-text').textContent = `HP ${battle.enemyHp.toLocaleString()} / ${battle.maxHp.toLocaleString()}`;
+  if ($('#party-hp-bar')) $('#party-hp-bar').style.width = `${playerPercent}%`;
+  const playerStrong = $('.v5-player-hud strong'); if (playerStrong) playerStrong.textContent = `HP ${battle.playerHp} / ${battle.playerMaxHp}`;
+  if ($('#combo-count')) $('#combo-count').textContent = battle.combo;
+  if ($('#magic-count')) $('#magic-count').textContent = battle.magic;
+  if ($('#v5-magic-fill')) $('#v5-magic-fill').style.width = `${battle.magic}%`;
+  updateUltimateButton();
+}
+function showBattleFeedback(correct, question, defeated, playerDefeated) {
+  const host = $('#battle-feedback-host'); if (!host) return;
+  const heading = playerDefeated ? '力尽きてしまった…' : correct ? (defeated ? 'VICTORY!' : battle.lastGrade || (battle.combo >= 3 ? `${battle.combo} COMBO!` : '正解！')) : '惜しい！';
+  const resultLine = correct ? `英語の力で ${battle.lastDamage || 0} ダメージ！　英語パワー ${battle.magic}%` : `${battle.monster.name}の攻撃。HPが ${battle.lastDamage || 0} 減った。`;
+  const detail = correct ? question.explain : `${question.explain} 次は文の形を見てみよう。`;
+  const label = playerDefeated ? 'もう一度挑戦' : defeated ? '宝箱へ進む' : '次の問題';
+  host.innerHTML = `<div class="feedback-panel v5-feedback ${correct?'good':'bad'}"><div class="v5-feedback-mark">${correct?'✓':'!'}</div><div class="v5-feedback-copy"><h3>${heading}</h3><strong>${escapeHTML(resultLine)}</strong><p>${escapeHTML(detail)}</p></div><button id="feedback-next" class="btn ${correct?'btn-gold':'btn-primary'}">${label} ${icon('arrow')}</button></div>`;
+  $('#feedback-next').addEventListener('click', () => {
+    host.innerHTML = '';
+    if (playerDefeated) { audio.sfx('defeat'); startBattle(battle.quest.id); return; }
+    if (defeated) { finishBattle(); return; }
+    battle.round += 1;
+    renderNextBattleQuestion();
+  });
+}
+function selectLoot(monster, quest) {
+  if (quest.id === QUESTS.length) return ['dragonBlade','moonCharm','royalCoin'];
+  const drops = [...monster.drops];
+  const first = drops[0];
+  const second = quest.isBoss ? drops[drops.length-1] : (Math.random() < .32 ? drops[Math.min(1,drops.length-1)] : null);
+  return [...new Set([first, second].filter(Boolean))];
+}
+function finishBattle() {
+  if (!battle || battle.finished) return;
+  battle.finished = true;
+  const quest = battle.quest;
+  const stars = battle.wrong === 0 ? 3 : battle.wrong <= 2 ? 2 : 1;
+  const bonusGold = stars === 3 ? 25 : stars === 2 ? 10 : 0;
+  state.pendingReward = {
+    receiptId: randomId(), questId: quest.id, monsterId: battle.monster.id,
+    gold: quest.gold + bonusGold, xp: quest.xp + battle.correct * 3,
+    items: selectLoot(battle.monster, quest), stars,
+    correct: battle.correct, wrong: battle.wrong, bestCombo: battle.bestCombo,
+    createdAt: Date.now(), claimed: false
+  };
+  saveState();
+  const art = $('#monster-art'); art?.classList.add('defeat');
+  audio.sfx('chest'); confetti(28);
+  setTimeout(renderReward, state.settings.reducedMotion ? 0 : 750);
+}
+
+/* ---------- rewards, inventory and progression ---------- */
+let rewardClaimInFlight = false;
+function rewardLootHTML(reward) {
+  return `<div class="loot-row">${reward.items.map((id) => {
+    const itemData = ITEMS[id];
+    return `<div class="loot-card" data-loot="${id}"><img src="${itemData.image}" alt=""><strong>${escapeHTML(itemData.name)}</strong><small>${rarityLabel(itemData.rarity)}</small></div>`;
+  }).join('')}<div class="loot-card"><img src="assets/items/king-coin.svg" alt=""><strong>${reward.gold.toLocaleString()} ゴールド</strong><small>お金</small></div><div class="loot-card"><img src="assets/items/light-stone.svg" alt=""><strong>経験値 +${reward.xp.toLocaleString()}</strong><small>レベルアップに必要</small></div></div>`;
+}
+function renderReward() {
+  const reward = state.pendingReward;
+  if (!reward) { renderHome(); return; }
+  currentScreen = 'reward'; state.lastScreen = 'reward'; saveState();
+  const opened = Boolean(reward.opened || reward.claimed);
+  $('#app').innerHTML = `<main class="screen reward-screen cinematic-vignette"><div class="reward-art"></div><div class="grain"></div>${particlesHTML(18)}<div class="reward-content">
+    <div class="eyebrow">冒険クリア · ${'★'.repeat(reward.stars)}</div>
+    <h1 class="reward-title">${opened ? 'アイテムを発見！' : '勝利の宝箱'}</h1>
+    <p class="reward-sub">${opened ? 'バッグに受け取るまで報酬は確定しません。' : '宝箱を開けて、冒険の成果を確かめよう。'}</p>
+    <div id="reward-loot">${opened ? rewardLootHTML(reward) : ''}</div>
+    <button id="reward-action" class="btn btn-gold btn-big" ${reward.claimed ? 'disabled' : ''}>${opened ? `${icon('bag')}バッグに受け取る` : `${icon('chest')}宝箱を開ける`}</button>
+    <div id="claim-status" class="claim-status">${reward.claimed ? '受取済みです。' : ''}</div>
+  </div></main>`;
+  audio.startMusic('reward');
+  $('#reward-action').addEventListener('click', () => opened ? claimReward() : openRewardChest());
+  if (!opened) audio.sfx('chest');
+}
+function openRewardChest() {
+  const reward = state.pendingReward;
+  if (!reward || reward.opened) return;
+  reward.opened = true;
+  saveState();
+  audio.sfx('chest'); vibrate([40,30,60,30,100]); screenFlash('#fff2a555'); confetti(42);
+  renderReward();
+}
+function applyQuestCompletion(reward) {
+  const existing = state.completedQuests[reward.questId] || { stars: 0, clears: 0 };
+  state.completedQuests[reward.questId] = { stars: Math.max(existing.stars, reward.stars), clears: (existing.clears || 0) + 1, lastClear: Date.now() };
+  state.unlockedQuest = clamp(Math.max(state.unlockedQuest, reward.questId + 1), 1, QUESTS.length);
+  if (!state.discoveredMonsters.includes(reward.monsterId)) state.discoveredMonsters.push(reward.monsterId);
+  state.defeatedMonsters[reward.monsterId] = (state.defeatedMonsters[reward.monsterId] || 0) + 1;
+}
+function claimReward() {
+  const reward = state.pendingReward;
+  if (!reward || rewardClaimInFlight) return;
+  rewardClaimInFlight = true;
+  const button = $('#reward-action'); if (button) button.disabled = true;
+  const alreadyApplied = state.receipts.includes(reward.receiptId);
+  if (alreadyApplied && reward.claimed) {
+    rewardClaimInFlight = false;
+    if (currentScreen === 'reward') renderVictory();
+    return;
+  }
+  if (!alreadyApplied) {
+    reward.items.forEach((id) => addItem(id, 1, true));
+    state.gold += reward.gold;
+    addXp(reward.xp);
+    applyQuestCompletion(reward);
+    updateDaily('battles');
+    state.receipts.push(reward.receiptId);
+    if (state.receipts.length > 250) state.receipts = state.receipts.slice(-250);
+  }
+  reward.claimed = true;
+  saveState();
+  const status = $('#claim-status');
+  if (status) status.textContent = alreadyApplied ? 'この報酬はすでにバッグへ追加済みです。' : `バッグに追加しました（${reward.items.map((id) => ITEMS[id].name).join('、')}）。`;
+  audio.sfx('receive'); vibrate([30,35,30]); confetti(55); announce('報酬をバッグに受け取りました。');
+  setTimeout(() => { rewardClaimInFlight = false; renderVictory(); }, state.settings.reducedMotion ? 0 : 850);
+}
+function renderVictory() {
+  const reward = state.pendingReward;
+  if (!reward) { renderHome(); return; }
+  const quest = QUESTS.find((entry) => entry.id === reward.questId);
+  currentScreen = 'victory'; state.lastScreen = 'victory'; saveState();
+  $('#app').innerHTML = `<main class="screen victory-screen cinematic-vignette"><div class="victory-art"></div><div class="grain"></div>${particlesHTML(28)}<div class="victory-content">
+    <div class="eyebrow">冒険 ${String(quest.id).padStart(2,'0')} クリア</div><h1 class="victory-title">勝利！</h1><p>${escapeHTML(quest.name)}をクリアし、<strong>${escapeHTML(TOPICS[quest.topicId].name)}</strong>の英語スキルを身につけた。</p>
+    <div class="result-stats"><div class="result-stat"><strong>${'★'.repeat(reward.stars)}</strong><small>評価</small></div><div class="result-stat"><strong>${reward.correct}</strong><small>正解</small></div><div class="result-stat"><strong>${reward.bestCombo}</strong><small>最高れんぞく</small></div><div class="result-stat"><strong>${masteryPercent(quest.topicId)}%</strong><small>理解度</small></div></div>
+    <button id="victory-next" class="btn btn-gold btn-big">${quest.id === QUESTS.length ? 'エンディングへ' : '王国へ戻る'} ${icon('arrow')}</button>
+  </div></main>`;
+  audio.startMusic('reward'); confetti(36);
+  $('#victory-next').addEventListener('click', () => {
+    const final = quest.id === QUESTS.length;
+    state.pendingReward = null; saveState(); battle = null;
+    if (final) showEnding(); else renderHome();
+  });
+}
+function showEnding() {
+  playStory([
+    { speaker: '闇のドラゴン', text: '最初に会ったとき、お前には私の英語が分からなかった。だが今は、もう聞き取れるのだな。' },
+    { speaker: '女王', text: `${state.profile.name}、あなたは王国の英語を取り戻しました。そして、自分で世界を理解する力も手に入れました。` },
+    { speaker: 'ミント', text: '冒険はまだ続くよ。図鑑を完成させて、苦手な英語スキルも100%まで育てよう！' }
+  ], renderHome);
+}
+function rarityLabel(rarity) { return ({common:'ふつう',rare:'レア',epic:'すごくレア',legendary:'伝説'})[rarity] || rarity; }
+function itemTypeLabel(type) { return ({weapon:'武器',armor:'防具',charm:'お守り',consumable:'道具',material:'素材'})[type] || type; }
+function inventoryItems() {
+  return Object.entries(state.inventory).filter(([id,count]) => ITEMS[id] && count > 0).map(([id,count]) => ({...ITEMS[id],count})).sort((a,b) => {
+    const rank = {legendary:4,epic:3,rare:2,common:1}; return (rank[b.rarity]-rank[a.rarity]) || a.name.localeCompare(b.name,'ja');
+  });
+}
+function renderInventory(filter = inventoryFilter) {
+  inventoryFilter = filter;
+  const all = inventoryItems();
+  const filtered = filter === 'all' ? all : all.filter((itemData) => itemData.type === filter);
+  if (!selectedItemId || !state.inventory[selectedItemId] || (filter !== 'all' && ITEMS[selectedItemId]?.type !== filter)) selectedItemId = filtered[0]?.id || null;
+  setScreen('inventory', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">もちもの</div><h1 class="section-title">バッグ</h1><p>装備と素材はすべて自動セーブされます。</p></div><span class="badge">${all.reduce((sum,itemData)=>sum+itemData.count,0)} 個</span></header>
+    <div class="tabs" role="tablist">${[['all','すべて'],['weapon','武器'],['armor','防具'],['charm','お守り'],['consumable','道具'],['material','素材']].map(([id,label]) => `<button class="tab ${filter===id?'active':''}" data-filter="${id}" role="tab">${label}</button>`).join('')}</div>
+    <div class="inventory-layout"><div class="item-grid">${filtered.length ? filtered.map((itemData) => `<button class="item-card ${selectedItemId===itemData.id?'selected':''}" data-item="${itemData.id}" data-rarity="${itemData.rarity}" aria-label="${escapeHTML(itemData.name)} ${itemData.count}個"><img src="${itemData.image}" alt=""><span class="item-name">${escapeHTML(itemData.name)}</span><span class="count">×${itemData.count}</span>${state.newItems.includes(itemData.id)?'<span class="new-ribbon">新しい</span>':''}</button>`).join('') : '<p class="subtle">この種類のアイテムはまだありません。</p>'}</div><aside id="item-detail" class="item-detail panel">${itemDetailHTML(selectedItemId)}</aside></div>
+  </div></div>${navHTML('inventory')}</main>`, 'home');
+  $$('[data-filter]').forEach((button) => button.addEventListener('click', () => renderInventory(button.dataset.filter)));
+  $$('[data-item]').forEach((button) => button.addEventListener('click', () => {
+    selectedItemId = button.dataset.item;
+    state.newItems = state.newItems.filter((id) => id !== selectedItemId); saveState();
+    renderInventory(inventoryFilter);
+  }));
+  bindItemDetailActions();
+}
+function itemDetailHTML(id) {
+  const itemData = ITEMS[id];
+  if (!itemData) return '<div class="detail-art"></div><h2>アイテムを選択</h2><p>左の一覧から確認したいアイテムを選んでください。</p>';
+  const equippedSlot = ['weapon','armor','charm'].find((slot) => state.equipment[slot] === id);
+  const stats = [['attack','攻撃'],['defense','防御'],['magic','魔力'],['hp','HP']].filter(([key]) => itemData[key]);
+  return `<div class="detail-art"><img src="${itemData.image}" alt="${escapeHTML(itemData.name)}"></div><div class="rarity">${rarityLabel(itemData.rarity)} · ${itemTypeLabel(itemData.type)}</div><h2>${escapeHTML(itemData.name)}</h2><p>${escapeHTML(itemData.desc)}</p>${stats.length ? `<div class="stats-list">${stats.map(([key,label]) => `<div class="stat-box"><strong>+${itemData[key]}</strong><small>${label}</small></div>`).join('')}</div>` : ''}${equippedSlot ? '<span class="badge">装備中</span>' : ''}<div class="divider"></div>${['weapon','armor','charm'].includes(itemData.type) ? `<button id="equip-selected" class="btn btn-gold" ${equippedSlot?'disabled':''}>${icon('sword')}${equippedSlot?'装備中':'装備する'}</button>` : itemData.type==='consumable' ? '<p class="subtle">回復薬は戦闘中に使用できます。</p>' : '<p class="subtle">新しい装備を作ったり、冒険で使ったりする素材です。</p>'}`;
+}
+function bindItemDetailActions() {
+  $('#equip-selected')?.addEventListener('click', () => {
+    const itemData = ITEMS[selectedItemId]; if (!itemData) return;
+    state.equipment[itemData.type] = itemData.id;
+    saveState(); audio.sfx('receive'); toast(`${itemData.name}を装備した！`, 'success'); renderInventory(inventoryFilter);
+  });
+}
+function renderParty() {
+  const stats = getEquipmentStats();
+  const slots = [['weapon','武器'],['armor','防具'],['charm','お守り']];
+  const selectedId = selectedCharacterId();
+  const roster = [
+    { ...CHARACTERS[selectedId], name: state.profile.name, isPlayer: true },
+    ...['ray','emma','kai','luna'].filter((id) => id !== selectedId).map((id) => CHARACTERS[id])
+  ];
+  setScreen('party', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">なかまと装備</div><h1 class="section-title">パーティ</h1><p>キャラクターを見たり、武器や防具を変えたりできます。</p></div><button id="party-skills" class="btn btn-ghost">${icon('spark')}英語スキル</button></header>
+    <section class="character-stage panel"><img src="assets/hero/party-wide.webp" alt="レイ、エマ、カイ、ルナ"><div class="character-stage-copy"><div class="eyebrow">4人の冒険者</div><h2>英語の力で、いっしょに戦う。</h2><p>それぞれの得意わざが、ちがう問題で役に立ちます。</p></div></section>
+    <section class="character-lineup" aria-label="キャラクター一覧">${roster.map((character) => `<button class="character-card panel character-${character.color}" data-character="${character.id}"><img src="${character.image}" alt="${escapeHTML(character.name)}"><span class="character-shine"></span><span class="character-copy"><small>${character.isPlayer ? 'あなたの主人公' : character.role}</small><strong>${escapeHTML(character.name)}</strong><em>${escapeHTML(character.skill)}</em></span></button>`).join('')}</section>
+    <div class="party-layout party-layout-v43"><section class="equipment-panel panel"><div class="eyebrow">今の強さ</div><h2>${escapeHTML(state.profile.name)} <span class="gold">Lv.${state.level}</span></h2><p class="subtle">英語問題に正解するほど、攻撃と魔法が強くなります。</p><div class="hero-stats"><div class="stat-box"><strong>${stats.maxHp}</strong><small>HP</small></div><div class="stat-box"><strong>${stats.attack}</strong><small>攻撃</small></div><div class="stat-box"><strong>${stats.magic}</strong><small>魔法</small></div></div></section>
+    <section class="equipment-panel panel"><div class="eyebrow">装備</div><h2>身につけているもの</h2><div class="equipment-slots">${slots.map(([slot,label]) => { const itemData=ITEMS[state.equipment[slot]]; return `<div class="equip-slot"><img src="${itemData?.image || 'assets/items/charm-magic.svg'}" alt=""><div><h3>${itemData?escapeHTML(itemData.name):'何もつけていない'}</h3><p>${label} · ${itemData?rarityLabel(itemData.rarity):'なし'}</p></div><button class="btn btn-ghost" data-change-slot="${slot}">変更</button></div>`; }).join('')}</div></section></div>
+  </div></div>${navHTML('party')}</main>`, 'home');
+  $('#party-skills').addEventListener('click', renderSkills);
+  $$('[data-change-slot]').forEach((button) => button.addEventListener('click', () => renderInventory(button.dataset.changeSlot)));
+  $$('[data-character]').forEach((button) => button.addEventListener('click', () => openCharacterModal(button.dataset.character, roster)));
+}
+function openCharacterModal(id, roster = []) {
+  const base = CHARACTERS[id];
+  if (!base) return;
+  const character = roster.find((entry) => entry.id === id) || base;
+  showModal(`<section class="modal character-modal" role="dialog" aria-modal="true" aria-labelledby="character-modal-title"><div class="character-modal-art"><img src="${character.image}" alt="${escapeHTML(character.name)}"></div><div class="eyebrow">${escapeHTML(character.role)}</div><h2 id="character-modal-title">${escapeHTML(character.name)}</h2><p>${escapeHTML(character.desc)}</p><div class="character-skill"><span>得意わざ</span><strong>${escapeHTML(character.skill)}</strong></div><div class="modal-actions"><button id="character-close" class="btn btn-gold">閉じる</button></div></section>`);
+  $('#character-close').addEventListener('click', closeModal);
+}
+function renderCodex() {
+  setScreen('codex', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">モンスター</div><h1 class="section-title">モンスター図鑑</h1><p>出会ったモンスターの特徴と、たおした数を見られます。</p></div><span class="badge">${state.discoveredMonsters.length}/8 発見</span></header><div class="codex-grid">${Object.values(MONSTERS).map((monster) => { const unlocked=state.discoveredMonsters.includes(monster.id); return `<article class="codex-card panel ${unlocked?'':'locked'}"><span class="codex-number">No.${monster.number}</span><img src="${monster.image}" alt="${unlocked?escapeHTML(monster.name):'まだ会っていないモンスター'}"><h3>${unlocked?escapeHTML(monster.name):'？？？？？？'}</h3><p>${unlocked?escapeHTML(monster.desc):'冒険で出会うと、名前と説明が見られます。'}</p>${unlocked?`<span class="badge">たおした数 ${state.defeatedMonsters[monster.id]||0}</span>`:''}</article>`; }).join('')}</div></div></div>${navHTML('codex')}</main>`, 'home');
+}
+function renderSkills() {
+  const average = Math.round(Object.values(state.mastery).reduce((sum,value)=>sum+value.score,0)/Object.keys(TOPICS).length);
+  setScreen('skills', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">英語の成長</div><h1 class="section-title">英語スキル</h1><p>文法ごとに、どれくらい身についたかを見られます。</p></div><span class="badge">総合 ${average}%</span></header><div class="skill-layout"><section class="skill-art panel"><div class="eyebrow">24の英語スキル</div><h2>少しずつ英語が強くなる</h2><p class="subtle">苦手な文法は、次の冒険で自然に復習できます。</p></section><section class="mastery-list panel">${TOPIC_SEQUENCE.map((id)=>{const topicData=TOPICS[id];const value=masteryPercent(id);return `<div class="mastery-row"><strong>${escapeHTML(topicData.name)}<small class="subtle"> · ${topicData.grade}</small></strong><div class="progress-track"><i style="width:${value}%"></i></div><span>${value}%</span></div>`;}).join('')}</section></div></div></div>${navHTML('party')}</main>`, 'home');
+}
+
+/* ---------- daily missions, settings, timer and application boot ---------- */
+function dailyAllComplete() { return DAILY_MISSIONS.every((mission) => (state.daily[mission.field] || 0) >= mission.target); }
+function renderDaily() {
+  resetDailyIfNeeded();
+  const allComplete = dailyAllComplete();
+  setScreen('daily', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">きょう</div><h1 class="section-title">今日のミッション</h1><p>毎日0時に更新。無理なく続けられる短い目標です。</p></div><span class="badge">${DAILY_MISSIONS.filter((mission)=>(state.daily[mission.field]||0)>=mission.target).length}/4 達成</span></header><div class="mission-list">${DAILY_MISSIONS.map((mission,index)=>{const value=Math.min(state.daily[mission.field]||0,mission.target);const complete=value>=mission.target;return `<section class="mission-card panel"><div class="mission-icon">${icon(['book','check','sword','mic'][index])}</div><div><h3>${escapeHTML(mission.name)}</h3><p>${escapeHTML(mission.description)} · 報酬 ${escapeHTML(mission.reward)}</p><div class="progress-track" style="margin-top:8px"><i style="width:${Math.round(value/mission.target*100)}%"></i></div></div><div class="mission-progress">${complete?'クリア':`${value}/${mission.target}`}</div></section>`;}).join('')}</div><section class="time-limit-card panel" style="margin-top:14px"><div class="eyebrow">ぜんぶクリア</div><h2>今日の特別報酬</h2><p class="subtle">4つの依頼を達成すると、100ゴールド・ジェム1個・光の石を受け取れます。</p><button id="daily-claim" class="btn btn-gold" ${!allComplete||state.daily.claimed?'disabled':''}>${icon('chest')}${state.daily.claimed?'受取済み':allComplete?'すべて受け取る':'依頼を達成しよう'}</button></section></div></div>${navHTML('home')}</main>`, 'home');
+  $('#daily-claim').addEventListener('click', claimDailyReward);
+}
+function claimDailyReward() {
+  resetDailyIfNeeded();
+  if (!dailyAllComplete() || state.daily.claimed) return;
+  const receipt = `daily-${state.daily.date}`;
+  if (!state.receipts.includes(receipt)) {
+    state.gold += 100; state.gems += 1; addItem('lumenCrystal',1,true); state.receipts.push(receipt);
+  }
+  state.daily.claimed = true; saveState(); audio.sfx('chest'); confetti(50); toast('100ゴールド・ジェム1個・光の石を受け取った！','success'); renderDaily();
+}
+function toggleSetting(key, button) {
+  state.settings[key] = !state.settings[key];
+  if (key === 'sound') audio.setEnabled(state.settings.sound);
+  if (key === 'reducedMotion') document.documentElement.classList.toggle('reduce-motion', state.settings.reducedMotion);
+  button.classList.toggle('on', state.settings[key]); button.setAttribute('aria-pressed',String(state.settings[key])); saveState(); audio.sfx('tap');
+}
+function renderSettings() {
+  resetDailyIfNeeded();
+  const remaining = Math.max(0,MAX_DAILY_SECONDS-state.play.seconds);
+  setScreen('settings', () => `<main class="screen content-screen">${hudHTML()}<div class="content-body"><div class="content-wrap"><header class="content-head"><div><div class="eyebrow">設定</div><h1 class="section-title">設定</h1><p>音、振動、表示、1日のプレイ時間を管理。</p></div><button id="settings-title" class="btn btn-ghost">タイトルへ</button></header><div class="settings-list">
+    <section class="setting-row panel"><div><h3>BGM・効果音</h3><p>音楽、正解、攻撃、宝箱などの演出音</p></div><button class="toggle ${state.settings.sound?'on':''}" data-setting="sound" aria-pressed="${state.settings.sound}" aria-label="BGMと効果音"><i></i></button></section>
+    <section class="setting-row panel"><div><h3>英語の読み上げ</h3><p>リスニング問題と発音見本を英語音声で再生</p></div><button class="toggle ${state.settings.voice?'on':''}" data-setting="voice" aria-pressed="${state.settings.voice}" aria-label="英語読み上げ"><i></i></button></section>
+    <section class="setting-row panel"><div><h3>スマホの振動</h3><p>攻撃を受けたときや宝箱を開けたときに振動</p></div><button class="toggle ${state.settings.haptics?'on':''}" data-setting="haptics" aria-pressed="${state.settings.haptics}" aria-label="振動"><i></i></button></section>
+    <section class="setting-row panel"><div><h3>動きを少なくする</h3><p>画面の揺れ、キラキラ演出、拡大する動きを減らす</p></div><button class="toggle ${state.settings.reducedMotion?'on':''}" data-setting="reducedMotion" aria-pressed="${state.settings.reducedMotion}" aria-label="動きを少なくする"><i></i></button></section>
+    <section class="setting-row panel"><div><h3>BGM音量</h3><p>効果音とは別に調整できます</p></div><input id="music-volume" class="range" type="range" min="0" max="1" step="0.05" value="${state.settings.musicVolume}" aria-label="BGM音量"></section>
+    <section class="setting-row panel"><div><h3>効果音量</h3><p>正解、攻撃、宝箱などの音量</p></div><input id="sfx-volume" class="range" type="range" min="0" max="1" step="0.05" value="${state.settings.sfxVolume}" aria-label="効果音量"></section>
+    <section class="time-limit-card panel"><div class="eyebrow">1日のプレイ時間</div><div class="time-big">残り ${formatTime(remaining)}</div><p class="subtle">今日のプレイ ${formatTime(state.play.seconds)} / 上限3時間。画面を閉じている時間は加算しません。</p></section>
+    <section class="setting-row panel"><div><h3>アプリとして追加</h3><p>対応端末ではホーム画面から全画面で起動できます</p></div><button id="install-app" class="btn btn-primary" ${deferredInstallPrompt?'':'disabled'}>${icon('install')}追加</button></section>
+    <section class="setting-row panel"><div><h3>冒険者名</h3><p>現在：${escapeHTML(state.profile.name)}</p></div><button id="rename-profile" class="btn btn-ghost">変更</button></section>
+    <section class="setting-row panel"><div><h3>冒険の書を初期化</h3><p>レベル、装備、冒険、英語の記録をすべて消去</p></div><button id="settings-reset" class="btn btn-red">初期化</button></section>
+  </div></div></div>${navHTML('home')}</main>`, 'home');
+  $$('[data-setting]').forEach((button)=>button.addEventListener('click',()=>toggleSetting(button.dataset.setting,button)));
+  $('#music-volume').addEventListener('input',(event)=>{state.settings.musicVolume=Number(event.target.value);saveState();});
+  $('#sfx-volume').addEventListener('input',(event)=>{state.settings.sfxVolume=Number(event.target.value);saveState();audio.sfx('tap');});
+  $('#settings-title').addEventListener('click',renderTitle);
+  $('#settings-reset').addEventListener('click',confirmReset);
+  $('#rename-profile').addEventListener('click',openRenameModal);
+  $('#install-app').addEventListener('click',installPwa);
+}
+function openRenameModal() {
+  showModal(`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="rename-title"><div class="eyebrow">名前の設定</div><h2 id="rename-title">冒険者名を変更</h2><label for="rename-input">新しい名前</label><input id="rename-input" class="text-input" maxlength="16" value="${escapeHTML(state.profile.name)}"><div class="modal-actions"><button id="rename-cancel" class="btn btn-ghost">やめる</button><button id="rename-save" class="btn btn-gold">保存</button></div></section>`);
+  $('#rename-cancel').addEventListener('click',closeModal);
+  $('#rename-save').addEventListener('click',()=>{const value=$('#rename-input').value.trim().slice(0,16);if(value)state.profile.name=value;saveState();closeModal();renderSettings();});
+}
+async function installPwa() {
+  if (!deferredInstallPrompt) { toast('このブラウザでは、共有メニューから「ホーム画面に追加」を選んでください。'); return; }
+  deferredInstallPrompt.prompt();
+  try { await deferredInstallPrompt.userChoice; } catch (_) {}
+  deferredInstallPrompt = null; renderSettings();
+}
+function renderTimeLimit() {
+  currentScreen='limit';
+  $('#app').innerHTML=`<main class="limit-overlay"><section class="limit-box"><div class="eyebrow">今日はここまで</div><h1>今日は3時間、よく冒険しました。</h1><p class="subtle">新しい冒険は明日また遊べます。今日は目を休めて、また明日つづきを楽しもう。</p><button id="limit-title" class="btn btn-gold">タイトルへ戻る</button></section></main>`;
+  audio.stopMusic();
+  $('#limit-title').addEventListener('click',renderTitle);
+}
+function tickPlayTime() {
+  resetDailyIfNeeded();
+  const now=Date.now(); const delta=Math.max(0,Math.min(15,(now-lastTickAt)/1000)); lastTickAt=now;
+  if (!document.hidden && state.profileComplete && !['title','limit'].includes(currentScreen)) {
+    state.play.seconds=clamp(state.play.seconds+delta,0,MAX_DAILY_SECONDS);
+    saveState();
+    if (state.play.seconds>=MAX_DAILY_SECONDS) renderTimeLimit();
+  }
+}
+function startPlayTimer() {
+  if (playTickHandle) clearInterval(playTickHandle);
+  lastTickAt=Date.now(); playTickHandle=setInterval(tickPlayTime,5000);
+  document.addEventListener('visibilitychange',()=>{lastTickAt=Date.now();if(document.hidden)saveState();});
+}
+function validateGameData() {
+  const errors=[];
+  if (QUESTS.length!==24) errors.push(`Quest count is ${QUESTS.length}, expected 24.`);
+  QUESTS.forEach((quest)=>{if(!TOPICS[quest.topicId])errors.push(`Missing topic ${quest.topicId}`);if(!MONSTERS[quest.monsterId])errors.push(`Missing monster ${quest.monsterId}`);});
+  Object.values(TOPICS).forEach((topicData)=>topicData.questions.forEach((question,index)=>{
+    if (!['choice','listen','order','voice'].includes(question.type)) errors.push(`${topicData.id} Q${index}: invalid type`);
+    if ((question.type==='choice'||question.type==='listen') && (!Array.isArray(question.answers)||!question.answers[question.correct])) errors.push(`${topicData.id} Q${index}: invalid answers`);
+    if (question.type==='order' && (!question.words||!question.target)) errors.push(`${topicData.id} Q${index}: invalid order`);
+    if (question.type==='order' && question.words && question.target) {
+      const tokens = (value) => (value.toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || []).sort().join('|');
+      if (tokens(question.words.join(' ')) !== tokens(question.target)) errors.push(`${topicData.id} Q${index}: order words do not match target`);
+    }
+    if (question.type==='voice' && !question.target) errors.push(`${topicData.id} Q${index}: invalid voice target`);
+  }));
+  Object.values(MONSTERS).forEach((monster)=>monster.drops.forEach((id)=>{if(!ITEMS[id])errors.push(`Missing item ${id} for ${monster.id}`);}));
+  if(errors.length) console.error('Game data validation failed',errors); else console.info(`English Legends ${APP_VERSION}: data validated (${QUESTS.length} quests, ${Object.keys(TOPICS).length} topics).`);
+  return errors;
+}
+function registerPwa() {
+  window.addEventListener('beforeinstallprompt',(event)=>{event.preventDefault();deferredInstallPrompt=event;});
+  if (false && 'serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch((error)=>console.warn('Service worker registration failed',error));
+}
+function installErrorBoundary() {
+  window.addEventListener('error',(event)=>{console.error('Unhandled error',event.error||event.message);toast('一時的なエラーが起きました。冒険の書は保存されています。','error');});
+  window.addEventListener('unhandledrejection',(event)=>{console.error('Unhandled rejection',event.reason);});
+}
+function createDebugApi() {
+  const params=new URLSearchParams(location.search);
+  if(!params.has('test'))return;
+  window.__EL_DEBUG__={
+    reset(){state=defaultState();state.profileComplete=true;state.profile.name='TEST HERO';saveState();renderHome();return true;},
+    completeOnboarding(){state.profileComplete=true;saveState();renderHome();},
+    startQuest(id=1){state.profileComplete=true;state.unlockedQuest=Math.max(state.unlockedQuest,Number(id));saveState();startBattle(Number(id));},
+    answerCorrect(){if(battle&&!feedbackLocked)resolveBattleAnswer(true);},
+    answerWrong(){if(battle&&!feedbackLocked)resolveBattleAnswer(false);},
+    next(){document.querySelector('#feedback-next')?.click();},
+    openReward(){if(state.pendingReward){state.pendingReward.opened=true;saveState();renderReward();}},
+    claim(){claimReward();},
+    navigate(screen){navigate(screen);},
+    setPlaySeconds(seconds){state.play.seconds=Number(seconds)||0;saveState();},
+    state(){return JSON.parse(JSON.stringify(state));},
+    battle(){return battle?JSON.parse(JSON.stringify(battle)):null;},
+    validate(){return validateGameData();}
+  };
+}
+function init() {
+  resetDailyIfNeeded();
+  document.documentElement.classList.toggle('reduce-motion',state.settings.reducedMotion);
+  installErrorBoundary(); validateGameData(); registerPwa(); startPlayTimer(); createDebugApi();
+  const assets=['assets/hero/party-wide.webp','assets/maps/guild-hall.webp','assets/maps/world.webp','assets/effects/treasure.webp','assets/hero/party-wide.webp','assets/hero/ray.webp'];
+  assets.forEach((src)=>{const image=new Image();image.src=src;});
+  setTimeout(()=>renderTitle(),350);
+}
+
+window.addEventListener('DOMContentLoaded',init);
+window.addEventListener('pagehide',saveState);
+
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn)); }
+
+/* =========================================================
+   Version 6.0.0 — Starlight Heroes quality pass
+   ========================================================= */
+function v52StageAsset(monster) {
+  const biome = battleBiome(monster);
+  const safe = ['forest','ruins','frost','fire','void'].includes(biome) ? biome : 'forest';
+  return `assets/maps/v52/battle-${safe}.webp`;
+}
+function v52EnemyIntent(round = 0) {
+  return (round + 1) % 3 === 0 ? { id: 'heavy', label: '強い攻撃', detail: 'まちがえると大きなダメージ' } : { id: 'normal', label: '通常攻撃', detail: '落ち着いて答えよう' };
+}
+function v52Rank(reward) {
+  if (reward?.rank) return reward.rank;
+  const attempts = Math.max(1, (reward?.correct || 0) + (reward?.wrong || 0));
+  const accuracy = (reward?.correct || 0) / attempts;
+  const score = accuracy * 60 + Math.min(5, reward?.bestCombo || 0) * 5 + Math.min(2, reward?.ultimateUses || 0) * 7 + Math.min(2, reward?.breaks || 0) * 5;
+  return score >= 90 ? 'S' : score >= 75 ? 'A' : score >= 58 ? 'B' : 'C';
+}
+function v52RankText(rank) {
+  return ({ S: '伝説級', A: 'すばらしい', B: 'よくできた', C: '次はもっと強くなる' })[rank] || 'クリア';
+}
+function v52HeroStyleLabel(hero) {
+  return ({ ray: 'れんぞく正解で大ダメージ', emma: 'まちがえても立て直しやすい', kai: '早く答えると強くなる', luna: '必殺技を早く使える' })[hero.id] || hero.passive;
+}
+
+function renderHome() {
+  resetDailyIfNeeded();
+  const quest = nextQuest();
+  const topicData = TOPICS[quest.topicId];
+  const region = REGIONS.find((entry) => entry.id === quest.regionId) || REGIONS[0];
+  const regionQuests = QUESTS.filter((entry) => entry.regionId === region.id);
+  const completedInRegion = regionQuests.filter((entry) => starsForQuest(entry.id) > 0).length;
+  const remaining = Math.max(0, MAX_DAILY_SECONDS - state.play.seconds);
+  const missionsDone = DAILY_MISSIONS.filter((mission) => state.daily[mission.field] >= mission.target).length;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const chapterPercent = Math.round((completedInRegion / regionQuests.length) * 100);
+  const mastery = masteryPercent(quest.topicId);
+  setScreen('home', () => `<main class="screen home-screen v52-home-screen">
+    ${hudHTML()}
+    <div class="home-body v52-home-body cinematic-vignette"><div class="grain"></div><div class="home-content v52-home-content">
+      <section class="v52-hero-banner hero-${hero.color}">
+        <div class="v52-banner-copy"><div class="eyebrow">CHAPTER ${region.id} · ${completedInRegion}/${regionQuests.length}</div><h1>${escapeHTML(region.name)}</h1><p>${escapeHTML(state.profile.name)}とミントは、消えた英語の魔法を探して森の奥へ進む。</p><div class="v52-progress"><i style="width:${chapterPercent}%"></i><span>${chapterPercent}%</span></div></div>
+        <button class="v52-banner-hero" data-home-action="party" aria-label="主人公とパーティを見る"><img src="${hero.card}" alt="${escapeHTML(state.profile.name)}"><div><small>${escapeHTML(hero.role)}</small><strong>${escapeHTML(state.profile.name)}</strong><em>${escapeHTML(v52HeroStyleLabel(hero))}</em></div><img class="v52-banner-mint" src="${CHARACTERS.mint.image}" alt="ミント"></button>
+      </section>
+      <section class="v52-next-quest panel ornate">
+        <div class="v52-quest-art" aria-hidden="true"></div>
+        <div class="v52-quest-copy"><span class="v52-kicker">次の冒険 · QUEST ${String(quest.id).padStart(2,'0')}</span><h2>${escapeHTML(quest.name)}</h2><p>${escapeHTML(quest.description)}</p><div class="v52-learning"><span>今回の英語</span><strong>${escapeHTML(topicData.name)}</strong><i>理解度 ${mastery}%</i></div><div class="v52-quest-meta"><span>約5分</span><span>経験値 +${quest.xp}</span><span>${quest.isBoss ? 'ボス戦' : '通常戦'}</span></div></div>
+        <button id="continue-quest" class="btn btn-gold btn-big v52-adventure-btn">${icon('sword')} 冒険を始める</button>
+      </section>
+      <section class="v52-route" aria-label="この章の冒険">
+        ${regionQuests.map((entry,index)=>{const done=starsForQuest(entry.id)>0;const current=entry.id===quest.id;const locked=entry.id>state.unlockedQuest;return `<button class="v52-route-node ${done?'done':''} ${current?'current':''} ${locked?'locked':''}" data-road-quest="${entry.id}" ${locked?'disabled':''}><b>${done?'✓':entry.isBoss?'BOSS':index+1}</b><span><strong>${escapeHTML(entry.name)}</strong><small>${done?`${starsForQuest(entry.id)}★ クリア`:current?'次に進む':'まだ行けない'}</small></span></button>${index<regionQuests.length-1?'<i></i>':''}`;}).join('')}
+      </section>
+      <section class="v52-home-actions">
+        <button class="v52-action panel" data-home-action="map"><span>${icon('map')}</span><div><strong>世界地図</strong><small>冒険する場所</small></div></button>
+        <button class="v52-action panel" data-home-action="skills"><span>${icon('spark')}</span><div><strong>英語の力</strong><small>覚えたこと</small></div></button>
+        <button class="v52-action panel" data-home-action="daily"><span>${icon('chest')}</span><div><strong>今日の目標</strong><small>${missionsDone}/4 できた</small></div></button>
+        <button class="v52-action panel" data-home-action="settings"><span>${icon('gear')}</span><div><strong>設定</strong><small>残り ${formatTime(remaining)}</small></div></button>
+      </section>
+    </div></div>${navHTML('home')}
+  </main>`, 'home');
+  $('#continue-quest').addEventListener('click', () => startQuestFlow(quest.id));
+  $$('[data-road-quest]').forEach((button) => button.addEventListener('click', () => startQuestFlow(Number(button.dataset.roadQuest))));
+  $$('[data-home-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.homeAction)));
+}
+
+function startBattle(questId) {
+  const quest = QUESTS.find((entry) => entry.id === Number(questId));
+  if (!quest) { renderMap(); return; }
+  const monster = MONSTERS[quest.monsterId];
+  const stats = getEquipmentStats();
+  const maxHp = Math.round(monster.baseHp + quest.level * 8 + (quest.isBoss ? 80 : 0));
+  battle = {
+    id: randomId(), quest, monster, maxHp, enemyHp: maxHp,
+    playerMaxHp: stats.maxHp, playerHp: stats.maxHp,
+    round: 0, correct: 0, wrong: 0, combo: 0, bestCombo: 0,
+    queue: buildQuestionQueue(quest), currentQuestion: null,
+    voiceAttempted: false, potionUsed: false, hintUsed: false, finished: false,
+    magic: 0, breakGauge: 0, breaks: 0, perfects: 0, criticalHits: 0,
+    ultimateUses: 0, lastGrade: '', lastBreak: false, lastCritical: false,
+    intent: v52EnemyIntent(0), questionStartedAt: Date.now(), startedAt: Date.now()
+  };
+  feedbackLocked = false; orderSelection = []; currentScreen = 'battle'; state.lastScreen = 'battle'; saveState();
+  renderBattleShell(); renderNextBattleQuestion(); audio.startMusic('battle');
+  if (quest.isBoss) { audio.sfx('boss'); vibrate([80,50,100]); }
+}
+
+function renderBattleShell() {
+  const hpPercent = Math.round((battle.enemyHp / battle.maxHp) * 100);
+  const playerPercent = Math.round((battle.playerHp / battle.playerMaxHp) * 100);
+  const topicData = TOPICS[battle.quest.topicId];
+  const hero = CHARACTERS[selectedCharacterId()];
+  const stage = v52StageAsset(battle.monster);
+  $('#app').innerHTML = `<main class="screen battle-screen v52-battle-screen" aria-label="${escapeHTML(battle.monster.name)}との戦闘">
+    <section id="battle-scene" class="battle-scene v52-battle-scene" data-biome="${battleBiome(battle.monster)}" style="--v52-stage:url('${stage}')">
+      <div class="v52-stage-bg"></div><div class="v52-stage-light"></div>${battleSparkHTML(36)}<div class="grain"></div>
+      <div id="v5-battle-intro" class="v5-battle-intro v52-battle-intro"><span>${battle.quest.isBoss?'BOSS BATTLE':'BATTLE START'}</span><strong>${escapeHTML(battle.monster.name)}</strong><small>${escapeHTML(monsterBattleLine(battle.monster.id))}</small></div>
+      <header class="v52-enemy-hud"><div class="v52-enemy-name"><small>${escapeHTML(battle.monster.title)}</small><strong>${escapeHTML(battle.monster.name)}</strong><em>Lv.${battle.quest.level}${battle.quest.isBoss?' · BOSS':''}</em></div><div class="v52-enemy-bar"><span>HP</span><div><i id="enemy-hp-bar" style="width:${hpPercent}%"></i></div><b id="enemy-hp-text">${battle.enemyHp.toLocaleString()} / ${battle.maxHp.toLocaleString()}</b></div><div class="v52-break-bar"><span>BREAK</span><div><i id="enemy-break-bar" style="width:0%"></i></div><b id="enemy-break-text">0%</b></div></header>
+      <div class="v52-battle-tools"><button id="battle-hint" class="v52-tool" aria-label="ミントヒント">${icon('hint')}<span>ヒント</span></button><button id="battle-potion" class="v52-tool" aria-label="回復薬">${icon('potion')}<span>${state.inventory.crimsonPotion||0}</span></button><button id="battle-sound" class="v52-tool" aria-label="音を切り替える">${icon(state.settings.sound?'volume':'mute')}</button><button id="battle-retreat" class="v52-tool" aria-label="戦闘から退く">${icon('close')}</button></div>
+      <div id="monster-wrap" class="monster-wrap v52-monster-wrap"><div class="v52-monster-ring"></div><div class="monster-shadow"></div><img id="monster-art" class="monster-art" src="${battle.monster.image}" alt="${escapeHTML(battle.monster.name)}"><div id="monster-mood" class="v52-monster-line">${escapeHTML(monsterBattleLine(battle.monster.id))}</div></div>
+      <div id="hero-battle" class="hero-battle v52-hero-battle hero-${hero.color}"><img src="${hero.card}" alt="戦う${escapeHTML(state.profile.name)}"><div class="v52-hero-frame"></div><span><small>${escapeHTML(hero.role)}</small><strong>${escapeHTML(state.profile.name)}</strong></span></div>
+      <div class="v52-player-hud"><img src="${hero.portrait}" alt=""><div><span>${escapeHTML(state.profile.name)} · Lv.${state.level}</span><strong>HP <b id="player-hp-text">${battle.playerHp}</b> / ${battle.playerMaxHp}</strong><div class="hp-track"><i id="party-hp-bar" style="width:${playerPercent}%"></i></div></div><img class="v52-mint" src="${CHARACTERS.mint.image}" alt="ミント"></div>
+      <div class="v52-combat-status"><div><small>COMBO</small><strong id="combo-count">0</strong></div><span id="battle-grade">READY</span><div class="v52-intent"><small>敵の次の動き</small><strong id="enemy-intent">${battle.intent.label}</strong></div></div>
+      <div class="v52-magic"><div class="v52-magic-label"><span>英語パワー</span><b id="magic-count">0</b><em>%</em></div><div class="v52-magic-track"><i id="v5-magic-fill" style="width:0%"></i></div><button id="ultimate-skill" class="v51-ultimate-btn v52-ultimate" disabled><span>必殺技</span><b>${escapeHTML(hero.ultimate)}</b></button></div>
+      <div id="battle-feedback-host"></div>
+    </section>
+    <section class="question-panel v52-question-panel" aria-label="英語問題"><div id="question-inner" class="question-inner v52-question-inner"></div></section>
+  </main>`;
+  $('#battle-sound').addEventListener('click', toggleBattleSound);
+  $('#battle-potion').addEventListener('click', useBattlePotion);
+  $('#battle-hint').addEventListener('click', useMintHint);
+  $('#battle-retreat').addEventListener('click', confirmRetreat);
+  $('#ultimate-skill').addEventListener('click', useUltimateSkill);
+  updateBattleHud();
+  setTimeout(() => $('#v5-battle-intro')?.classList.add('hide'), state.settings.reducedMotion ? 50 : 1100);
+}
+
+function renderNextBattleQuestion() {
+  if (!battle || battle.finished) return;
+  feedbackLocked = false; orderSelection = [];
+  battle.questionStartedAt = Date.now();
+  battle.currentQuestion = nextQuestionFromQueue();
+  battle.intent = v52EnemyIntent(battle.round);
+  updateUltimateButton(); updateBattleHud();
+  const question = battle.currentQuestion;
+  const topicData = TOPICS[question.topicId || battle.quest.topicId];
+  const inner = $('#question-inner'); if (!inner) return;
+  const total = battle.queue.length;
+  inner.innerHTML = `<div class="v52-question-head"><div><span>${question.review?'復習 · ':''}${escapeHTML(topicData.grade)}</span><strong>${escapeHTML(topicData.name)}</strong></div><div class="v52-turn"><small>TURN</small><b>${battle.round+1}</b><span>/ ${total}</span></div></div><div class="v52-command"><span>${icon('sword')} 英語で攻撃</span><div>${Array.from({length:Math.min(total,7)},(_,i)=>`<i class="${i<battle.round?'done':i===battle.round?'current':''}"></i>`).join('')}</div></div><div class="question-prompt">${escapeHTML(question.prompt)}</div><p class="question-instruction">${escapeHTML(questionInstruction(question))}</p><div id="question-content"></div>`;
+  renderQuestionContent(question); announce(`問題。${question.prompt}`);
+}
+
+function updateBattleHud() {
+  if (!battle) return;
+  const enemyPercent = Math.round((battle.enemyHp / battle.maxHp) * 100);
+  const playerPercent = Math.round((battle.playerHp / battle.playerMaxHp) * 100);
+  $('#enemy-hp-bar')?.style.setProperty('width', `${enemyPercent}%`);
+  if ($('#enemy-hp-text')) $('#enemy-hp-text').textContent = `${battle.enemyHp.toLocaleString()} / ${battle.maxHp.toLocaleString()}`;
+  $('#party-hp-bar')?.style.setProperty('width', `${playerPercent}%`);
+  if ($('#player-hp-text')) $('#player-hp-text').textContent = battle.playerHp;
+  if ($('#combo-count')) $('#combo-count').textContent = battle.combo;
+  if ($('#magic-count')) $('#magic-count').textContent = battle.magic;
+  $('#v5-magic-fill')?.style.setProperty('width', `${battle.magic}%`);
+  $('#enemy-break-bar')?.style.setProperty('width', `${battle.breakGauge || 0}%`);
+  if ($('#enemy-break-text')) $('#enemy-break-text').textContent = `${battle.breakGauge || 0}%`;
+  if ($('#battle-grade')) $('#battle-grade').textContent = battle.lastGrade || 'READY';
+  if ($('#enemy-intent')) $('#enemy-intent').textContent = battle.intent?.label || '通常攻撃';
+  updateUltimateButton();
+}
+
+function showDamage(amount, enemyTarget) {
+  const scene = $('#battle-scene'); if (!scene) return;
+  const node = document.createElement('div');
+  node.className = `damage-number v52-damage ${enemyTarget ? 'enemy' : 'player'} ${battle?.lastCritical ? 'critical' : ''} ${battle?.lastBreak ? 'break' : ''}`;
+  node.innerHTML = enemyTarget ? `<small>${battle?.lastBreak?'BREAK ':battle?.lastCritical?'CRITICAL ':''}DAMAGE</small><strong>${amount}</strong>` : `<small>HP DAMAGE</small><strong>-${amount}</strong>`;
+  scene.appendChild(node); setTimeout(() => node.remove(), 1200);
+}
+
+function resolveBattleAnswer(correct, meta = {}) {
+  if (!battle || feedbackLocked) return;
+  feedbackLocked = true;
+  if (activeRecognition) { try { activeRecognition.stop(); } catch (_) {} activeRecognition = null; }
+  const question = battle.currentQuestion;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const responseMs = Math.max(0, Date.now() - (battle.questionStartedAt || Date.now()));
+  battle.lastBreak = false; battle.lastCritical = false;
+  updateDaily('answers'); updateMastery(question.topicId || battle.quest.topicId, correct);
+  if (correct) {
+    updateDaily('correct'); battle.correct += 1; battle.combo += 1; battle.bestCombo = Math.max(battle.bestCombo, battle.combo);
+    const stats = getEquipmentStats();
+    const fast = responseMs <= 6500; const perfect = responseMs <= 3500;
+    if (perfect) battle.perfects += 1;
+    /* Chapter One is the learning vertical slice: keep each battle alive long
+       enough to expose listening, word order, speaking and meaning checks.
+       Later chapters retain the faster legacy pacing. */
+    const chapterOnePacing = battle.quest.id <= 4;
+    const minimumDamage = Math.ceil(battle.maxHp / (chapterOnePacing ? (battle.quest.isBoss ? 8.0 : 6.2) : (battle.quest.isBoss ? 6.6 : 5.2)));
+    let damage = Math.max(minimumDamage, 22 + stats.attack + Math.floor(stats.magic*.55) + battle.combo*5 + Math.floor(Math.random()*8));
+    if (hero.id === 'ray' && battle.combo >= 2) damage = Math.round(damage * (1 + Math.min(.30, battle.combo*.04)));
+    if (hero.id === 'kai' && fast) damage = Math.round(damage * 1.18);
+    const critical = perfect && battle.combo >= 2 || battle.combo >= 5;
+    if (critical) { damage = Math.round(damage * 1.25); battle.lastCritical = true; battle.criticalHits += 1; }
+    let breakGain = 22 + Math.min(18, battle.combo*3) + (perfect ? 9 : 0) + (hero.id === 'kai' && fast ? 5 : 0);
+    battle.breakGauge = Math.min(100, (battle.breakGauge || 0) + breakGain);
+    if (battle.breakGauge >= 100) { battle.breakGauge = 0; battle.breaks += 1; battle.lastBreak = true; damage = Math.round(damage * 1.35); }
+    const cap = Math.floor(battle.maxHp / (chapterOnePacing ? (battle.quest.isBoss ? 6.7 : 5.0) : (battle.quest.isBoss ? 4.1 : 2.7))); damage = Math.min(cap, damage);
+    let magicGain = 29 + (battle.combo >= 3 ? 8 : 0) + (fast ? 3 : 0);
+    if (hero.id === 'kai' && fast) magicGain += 6; if (hero.id === 'luna') magicGain += 9;
+    battle.magic = Math.min(100, battle.magic + magicGain);
+    battle.lastGrade = battle.lastBreak ? 'BREAK!' : battle.lastCritical ? 'CRITICAL!' : perfect ? 'PERFECT!' : fast ? 'FAST!' : battle.combo >= 3 ? `${battle.combo} COMBO!` : 'GOOD!';
+    battle.enemyHp = Math.max(0, battle.enemyHp - damage); battle.lastDamage = damage; battle.lastResult = 'correct';
+    audio.sfx('correct'); setTimeout(() => audio.sfx('slash'), 100); vibrate(battle.lastBreak ? [35,30,70,30,100] : [35,30,45]);
+    animateHeroAttack(); animateMonsterHit(); showDamage(damage, true); screenFlash(battle.lastBreak ? '#ffe88b55' : '#6ee8ff33');
+    if (battle.lastBreak) { $('#monster-wrap')?.classList.add('broken'); setTimeout(()=>$('#monster-wrap')?.classList.remove('broken'),800); shakeScreen(); }
+    meta.selectedButton?.classList.add('correct');
+  } else {
+    battle.wrong += 1; battle.combo = 0; battle.magic = Math.max(0,battle.magic-16); battle.breakGauge = Math.max(0,(battle.breakGauge||0)-18); battle.lastGrade='';
+    const stats=getEquipmentStats(); let incoming=Math.max(4,battle.monster.attack+Math.floor(battle.quest.level/3)-Math.floor(stats.defense*.24)+Math.floor(Math.random()*5));
+    if (battle.intent?.id === 'heavy') incoming=Math.round(incoming*1.35); if(hero.id==='emma')incoming=Math.max(3,Math.round(incoming*.72));
+    battle.playerHp=Math.max(0,battle.playerHp-incoming); battle.lastDamage=incoming; battle.lastResult='wrong';
+    audio.sfx('wrong'); setTimeout(()=>audio.sfx('enemy'),120); vibrate([70,50,90]); shakeScreen(); showDamage(incoming,false); screenFlash('#ff5b4b22'); meta.selectedButton?.classList.add('wrong');
+  }
+  updateBattleHud(); saveState();
+  const defeated=battle.enemyHp<=0; const playerDefeated=battle.playerHp<=0; showBattleFeedback(correct,question,defeated,playerDefeated);
+}
+
+function showBattleFeedback(correct, question, defeated, playerDefeated) {
+  const host=$('#battle-feedback-host'); if(!host)return;
+  const heading=playerDefeated?'力尽きてしまった…':correct?(defeated?'VICTORY!':battle.lastGrade||'正解！'):'惜しい！';
+  const resultLine=correct?`英語の力で ${battle.lastDamage||0} ダメージ！`:`${battle.monster.name}の${battle.intent?.label||'攻撃'}。HPが ${battle.lastDamage||0} 減った。`;
+  const detail=correct?(battle.lastBreak?'敵の守りを崩した！ 次の攻撃もチャンス。':question.explain):`${question.explain} 次は太字になる言葉や語順を見よう。`;
+  const label=playerDefeated?'もう一度挑戦':defeated?'宝箱へ進む':'次の問題';
+  const chips=correct?`<div class="v52-feedback-chips"><span>${battle.combo} COMBO</span><span>英語パワー ${battle.magic}%</span>${battle.lastCritical?'<span>会心</span>':''}${battle.lastBreak?'<span>ブレイク</span>':''}</div>`:'';
+  host.innerHTML=`<div class="feedback-panel v52-feedback ${correct?'good':'bad'}"><div class="v52-feedback-mark">${correct?'✓':'!'}</div><div class="v52-feedback-copy"><h3>${heading}</h3><strong>${escapeHTML(resultLine)}</strong><p>${escapeHTML(detail)}</p>${chips}</div><button id="feedback-next" class="btn ${correct?'btn-gold':'btn-primary'}">${label} ${icon('arrow')}</button></div>`;
+  $('#feedback-next').addEventListener('click',()=>{host.innerHTML='';if(playerDefeated){audio.sfx('defeat');startBattle(battle.quest.id);return;}if(defeated){finishBattle();return;}battle.round+=1;renderNextBattleQuestion();});
+}
+
+function useUltimateSkill() {
+  if (!battle || battle.magic < 100 || feedbackLocked || battle.finished) return;
+  feedbackLocked=true; const hero=CHARACTERS[selectedCharacterId()]; const stats=getEquipmentStats(); battle.magic=0; battle.ultimateUses+=1;
+  let damage=Math.round(battle.maxHp*(battle.quest.isBoss?.24:.34)+stats.magic*1.45+32);
+  if(hero.id==='ray'&&battle.combo>=4)damage=Math.round(damage*1.16); if(hero.id==='luna')damage=Math.round(damage*1.2);
+  if((battle.breakGauge||0)>=55){damage=Math.round(damage*1.18);battle.breakGauge=0;battle.breaks+=1;battle.lastBreak=true;}
+  if(hero.id==='emma')battle.playerHp=Math.min(battle.playerMaxHp,battle.playerHp+28);
+  battle.enemyHp=Math.max(0,battle.enemyHp-damage);battle.lastDamage=damage;battle.lastResult='ultimate';battle.lastCritical=true;updateBattleHud();showUltimateCutin(hero);audio.sfx('ultimate');vibrate([60,35,90,35,140]);
+  setTimeout(()=>{screenFlash('#eafcff77');shakeScreen();animateMonsterHit();showDamage(damage,true);},state.settings.reducedMotion?20:730);
+  setTimeout(()=>{const defeated=battle.enemyHp<=0;const host=$('#battle-feedback-host');if(host)host.innerHTML=`<div class="feedback-panel v52-feedback good v52-ultimate-result"><div class="v52-feedback-mark">★</div><div class="v52-feedback-copy"><h3>${escapeHTML(hero.ultimate)}！</h3><strong>${damage} ダメージ！</strong><p>${hero.id==='emma'?'光のバリアでHPも回復した。':'ためた英語パワーを一気に解き放った。'}</p><div class="v52-feedback-chips"><span>LEGEND SKILL</span><span>${battle.ultimateUses}回目</span></div></div><button id="ultimate-next" class="btn btn-gold">${defeated?'宝箱へ進む':'戦闘を続ける'} ${icon('arrow')}</button></div>`;$('#ultimate-next')?.addEventListener('click',()=>{host.innerHTML='';if(defeated){finishBattle();return;}feedbackLocked=false;battle.lastCritical=false;updateUltimateButton();});},state.settings.reducedMotion?80:1350);saveState();
+}
+
+function finishBattle() {
+  if(!battle||battle.finished)return; battle.finished=true; const quest=battle.quest; const stars=battle.wrong===0?3:battle.wrong<=2?2:1; const bonusGold=stars===3?25:stars===2?10:0;
+  const attempts=Math.max(1,battle.correct+battle.wrong); const score=(battle.correct/attempts)*60+Math.min(5,battle.bestCombo)*5+Math.min(2,battle.ultimateUses)*7+Math.min(2,battle.breaks)*5+Math.min(5,battle.perfects)*1.5; const rank=score>=90?'S':score>=75?'A':score>=58?'B':'C';
+  state.pendingReward={receiptId:randomId(),questId:quest.id,monsterId:battle.monster.id,gold:quest.gold+bonusGold,xp:quest.xp+battle.correct*3,items:selectLoot(battle.monster,quest),stars,rank,correct:battle.correct,wrong:battle.wrong,bestCombo:battle.bestCombo,perfects:battle.perfects,breaks:battle.breaks,criticalHits:battle.criticalHits,ultimateUses:battle.ultimateUses,createdAt:Date.now(),claimed:false};
+  saveState();$('#monster-art')?.classList.add('defeat');audio.sfx('chest');confetti(32);setTimeout(renderReward,state.settings.reducedMotion?0:750);
+}
+
+function rewardLootHTML(reward) {
+  return `<div class="v52-loot-grid">${reward.items.map((id,index)=>{const itemData=ITEMS[id];return `<div class="v52-loot-card rarity-${itemData.rarity}" style="--delay:${index*.09}s"><span>${rarityLabel(itemData.rarity)}</span><img src="${itemData.image}" alt=""><strong>${escapeHTML(itemData.name)}</strong><small>${escapeHTML(itemData.desc)}</small></div>`;}).join('')}<div class="v52-loot-card reward-money" style="--delay:.3s"><span>お金</span><img src="assets/items/king-coin.svg" alt=""><strong>${reward.gold.toLocaleString()} ゴールド</strong><small>町のお店で使える</small></div><div class="v52-loot-card reward-xp" style="--delay:.39s"><span>経験値</span><img src="assets/items/light-stone.svg" alt=""><strong>+${reward.xp.toLocaleString()} EXP</strong><small>主人公が成長する</small></div></div>`;
+}
+function renderReward() {
+  const reward=state.pendingReward;if(!reward){renderHome();return;}currentScreen='reward';state.lastScreen='reward';saveState();const opened=Boolean(reward.opened||reward.claimed);const rank=v52Rank(reward);
+  $('#app').innerHTML=`<main class="screen reward-screen v52-reward-screen ${opened?'opened':'closed'}"><div class="reward-art v52-reward-art"></div><div class="grain"></div>${particlesHTML(opened?34:18)}<div class="v52-reward-content"><div class="v52-rank"><small>BATTLE RANK</small><strong>${rank}</strong><span>${v52RankText(rank)}</span></div><div><div class="eyebrow">冒険クリア · ${'★'.repeat(reward.stars)}</div><h1 class="reward-title">${opened?'宝箱の中身':'勝利の宝箱'}</h1><p class="reward-sub">${opened?'見つけたアイテムをバッグに入れよう。':'タップして冒険の成果を受け取ろう。'}</p></div><div id="reward-loot">${opened?rewardLootHTML(reward):'<div class="v52-chest-seal"><span>OPEN</span></div>'}</div><button id="reward-action" class="btn btn-gold btn-big v52-reward-button" ${reward.claimed?'disabled':''}>${opened?`${icon('bag')}バッグに受け取る`:`${icon('chest')}宝箱を開ける`}</button><div id="claim-status" class="claim-status">${reward.claimed?'受取済みです。':''}</div></div></main>`;
+  audio.startMusic('reward');$('#reward-action').addEventListener('click',()=>opened?claimReward():openRewardChest());if(!opened)audio.sfx('chest');
+}
+function renderVictory() {
+  const reward=state.pendingReward;if(!reward){renderHome();return;}const quest=QUESTS.find((entry)=>entry.id===reward.questId);const rank=v52Rank(reward);currentScreen='victory';state.lastScreen='victory';saveState();
+  $('#app').innerHTML=`<main class="screen victory-screen v52-victory"><div class="victory-art"></div><div class="grain"></div>${particlesHTML(34)}<div class="v52-victory-content"><div class="v52-victory-rank"><small>RANK</small><strong>${rank}</strong></div><div class="eyebrow">QUEST ${String(quest.id).padStart(2,'0')} COMPLETE</div><h1>冒険クリア！</h1><p><strong>${escapeHTML(TOPICS[quest.topicId].name)}</strong>の英語を使って、${escapeHTML(quest.name)}を乗り越えた。</p><div class="v52-result-grid"><div><strong>${'★'.repeat(reward.stars)}</strong><small>評価</small></div><div><strong>${reward.correct}</strong><small>正解</small></div><div><strong>${reward.bestCombo}</strong><small>最高コンボ</small></div><div><strong>${reward.breaks||0}</strong><small>ブレイク</small></div><div><strong>${reward.ultimateUses||0}</strong><small>必殺技</small></div><div><strong>${masteryPercent(quest.topicId)}%</strong><small>理解度</small></div></div><button id="victory-next" class="btn btn-gold btn-big">${quest.id===QUESTS.length?'エンディングへ':'王国へ戻る'} ${icon('arrow')}</button></div></main>`;
+  audio.startMusic('reward');confetti(42);$('#victory-next').addEventListener('click',()=>{const final=quest.id===QUESTS.length;state.pendingReward=null;saveState();battle=null;if(final)showEnding();else renderHome();});
+}
+
+/* =========================================================
+   Version 6.1 — Chapter Flow overrides
+   ========================================================= */
+function questBriefingHTML(quest) {
+  const topicData = TOPICS[quest.topicId];
+  const monster = MONSTERS[quest.monsterId];
+  const region = REGIONS.find((entry) => entry.id === quest.regionId) || REGIONS[0];
+  return `<section class="modal quest-brief-modal" role="dialog" aria-modal="true" aria-labelledby="quest-brief-title">
+    <div class="quest-brief-visual" data-biome="${battleBiome(monster)}">
+      <img src="${monster.image}" alt="${escapeHTML(monster.name)}">
+      <div class="quest-brief-threat"><small>${quest.isBoss ? 'BOSS' : 'TARGET'}</small><strong>${escapeHTML(monster.name)}</strong><span>Lv.${quest.level}</span></div>
+    </div>
+    <div class="quest-brief-copy">
+      <div class="eyebrow">CHAPTER ${region.id} · QUEST ${String(quest.id).padStart(2,'0')}</div>
+      <h2 id="quest-brief-title">${escapeHTML(quest.name)}</h2>
+      <p>${escapeHTML(quest.description)}</p>
+      <div class="quest-brief-goal"><span>${icon('book')}</span><div><small>今回使う英語</small><strong>${escapeHTML(topicData.name)}</strong><p>${escapeHTML(topicData.summary)}</p></div></div>
+      <div class="quest-brief-meta"><span>約5分</span><span>経験値 +${quest.xp}</span><span>${quest.isBoss ? '章ボス' : '通常戦'}</span></div>
+      <div class="quest-brief-actions"><button id="brief-cancel" class="btn btn-ghost">戻る</button><button id="brief-start" class="btn btn-gold btn-big">${icon('sword')}戦いへ</button></div>
+    </div>
+  </section>`;
+}
+function showQuestBriefing(questId) {
+  const quest = QUESTS.find((entry) => entry.id === Number(questId));
+  if (!quest || quest.id > state.unlockedQuest) { toast('まだ挑戦できない冒険です。', 'error'); return; }
+  showModal(questBriefingHTML(quest));
+  $('#brief-cancel')?.addEventListener('click', closeModal);
+  $('#brief-start')?.addEventListener('click', () => { closeModal(); beginQuestStory(quest); });
+}
+function beginQuestStory(quest) {
+  if (state.play.seconds >= MAX_DAILY_SECONDS) { renderTimeLimit(); return; }
+  const region = REGIONS.find((entry) => entry.id === quest.regionId);
+  const monster = MONSTERS[quest.monsterId];
+  audio.sfx(quest.isBoss ? 'boss' : 'open');
+  const storyLines = [];
+  if (!state.regionStoriesSeen.includes(region.id)) {
+    storyLines.push({ speaker: '女王', text: region.story[0] }, { speaker: 'ミント', text: region.story[1] });
+  }
+  storyLines.push({ speaker: 'ミント', text: `${monster.name}が現れた！ 「${TOPICS[quest.topicId].name}」の英語を使って戦おう。` });
+  const begin = () => {
+    if (!state.regionStoriesSeen.includes(region.id)) state.regionStoriesSeen.push(region.id);
+    saveState(); startBattle(quest.id);
+  };
+  playStory(storyLines, begin);
+}
+function startQuestFlow(questId) { showQuestBriefing(questId); }
+
+function renderHome() {
+  resetDailyIfNeeded();
+  const quest = nextQuest();
+  const topicData = TOPICS[quest.topicId];
+  const region = REGIONS.find((entry)=>entry.id===quest.regionId) || REGIONS[0];
+  const regionQuests = QUESTS.filter((entry)=>entry.regionId===region.id);
+  const completedInRegion = regionQuests.filter((entry)=>starsForQuest(entry.id)>0).length;
+  const remaining = Math.max(0, MAX_DAILY_SECONDS - state.play.seconds);
+  const missionsDone = DAILY_MISSIONS.filter((mission) => state.daily[mission.field] >= mission.target).length;
+  const hero = CHARACTERS[selectedCharacterId()];
+  const chapterPercent = Math.round((completedInRegion / regionQuests.length) * 100);
+  const nextReward = quest.isBoss ? '章クリア報酬' : `${quest.gold}ゴールド`;
+  setScreen('home', () => `<main class="screen home-screen v5-home-screen v61-home-screen">
+    ${hudHTML()}
+    <div class="home-body v5-home-body cinematic-vignette"><div class="grain"></div><div class="home-content v5-home-content v61-home-content">
+      <section class="v61-hero-stage">
+        <div class="v61-stage-copy"><div class="eyebrow">CHAPTER ${region.id}</div><h1>${escapeHTML(region.name)}</h1><p>${escapeHTML(state.profile.name)}とミントの冒険。次の目的だけを見て、すぐに出発できます。</p><div class="v5-chapter-meter"><i style="width:${chapterPercent}%"></i><span>${completedInRegion} / ${regionQuests.length} クリア</span></div></div>
+        <button class="v61-stage-party hero-${hero.color}" data-home-action="party" aria-label="パーティを見る"><img src="${hero.card || hero.image}" alt="${escapeHTML(state.profile.name)}"><img class="v61-stage-mint" src="${CHARACTERS.mint.image}" alt="ミント"><span><small>${escapeHTML(hero.role)}</small><strong>${escapeHTML(state.profile.name)}</strong><em>${escapeHTML(hero.ultimate)}</em></span></button>
+      </section>
+      <section class="v61-next panel ornate">
+        <div class="v61-next-head"><span class="v5-quest-number">NEXT QUEST ${String(quest.id).padStart(2,'0')}</span><span class="v61-time">約5分</span></div>
+        <div class="v61-next-main"><div><h2>${escapeHTML(quest.name)}</h2><p>${escapeHTML(quest.description)}</p><div class="v61-learning"><span>${icon('book')}</span><div><small>今回の英語</small><strong>${escapeHTML(topicData.name)}</strong></div></div></div><button id="continue-quest" class="btn btn-gold btn-big">${icon('sword')}冒険を始める</button></div>
+        <div class="v61-next-foot"><span>EXP +${quest.xp}</span><span>${nextReward}</span><span>${quest.isBoss?'BOSS':'BATTLE'}</span></div>
+      </section>
+      <section class="v61-progress" aria-label="この章の進み具合">${regionQuests.map((entry,index)=>{const done=starsForQuest(entry.id)>0;const current=entry.id===quest.id;const locked=entry.id>state.unlockedQuest;return `<button class="v61-progress-node ${done?'done':''} ${current?'current':''} ${locked?'locked':''}" data-road-quest="${entry.id}" ${locked?'disabled':''}><span>${done?'✓':entry.isBoss?'BOSS':index+1}</span><strong>${escapeHTML(entry.name)}</strong><small>${done?`${starsForQuest(entry.id)}★`:current?'次':'未解放'}</small></button>`;}).join('<i></i>')}</section>
+      <section class="v61-quick-actions">
+        <button data-home-action="map">${icon('map')}<span>地図</span></button><button data-home-action="party">${icon('people')}<span>仲間</span></button><button data-home-action="inventory">${icon('bag')}<span>バッグ</span></button><button data-home-action="daily">${icon('chest')}<span>今日 ${missionsDone}/4</span></button><button data-home-action="settings">${icon('gear')}<span>${formatTime(remaining)}</span></button>
+      </section>
+    </div></div>${navHTML('home')}
+  </main>`, 'home');
+  $('#continue-quest')?.addEventListener('click', () => showQuestBriefing(quest.id));
+  $$('[data-road-quest]').forEach((button)=>button.addEventListener('click',()=>showQuestBriefing(Number(button.dataset.roadQuest))));
+  $$('[data-home-action]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.homeAction)));
+}
+
+function renderVictory() {
+  const reward=state.pendingReward;if(!reward){renderHome();return;}
+  const quest=QUESTS.find((entry)=>entry.id===reward.questId);const rank=v52Rank(reward);const next=QUESTS.find((entry)=>entry.id===quest.id+1);currentScreen='victory';state.lastScreen='victory';saveState();
+  const mastery = masteryPercent(quest.topicId);
+  $('#app').innerHTML=`<main class="screen victory-screen v52-victory v61-victory"><div class="victory-art"></div><div class="grain"></div>${particlesHTML(34)}<div class="v52-victory-content v61-victory-content"><div class="v52-victory-rank"><small>RANK</small><strong>${rank}</strong></div><div class="eyebrow">QUEST ${String(quest.id).padStart(2,'0')} COMPLETE</div><h1>冒険クリア！</h1><p><strong>${escapeHTML(TOPICS[quest.topicId].name)}</strong>の英語を使って、${escapeHTML(quest.name)}を乗り越えた。</p><div class="v61-mastery"><span>英語スキル</span><div><i style="width:${mastery}%"></i></div><strong>${mastery}%</strong></div><div class="v52-result-grid"><div><strong>${'★'.repeat(reward.stars)}</strong><small>評価</small></div><div><strong>${reward.correct}</strong><small>正解</small></div><div><strong>${reward.bestCombo}</strong><small>最高コンボ</small></div><div><strong>${reward.breaks||0}</strong><small>ブレイク</small></div><div><strong>${reward.ultimateUses||0}</strong><small>必殺技</small></div><div><strong>${reward.gold}</strong><small>ゴールド</small></div></div>${next?`<div class="v61-next-preview"><small>次の冒険</small><strong>${escapeHTML(next.name)}</strong><span>${escapeHTML(TOPICS[next.topicId].name)}</span></div>`:''}<div class="v61-victory-actions"><button id="victory-home" class="btn btn-ghost">王国へ戻る</button><button id="victory-next" class="btn btn-gold btn-big">${quest.id===QUESTS.length?'エンディングへ':next?'次の冒険へ':'王国へ戻る'} ${icon('arrow')}</button></div></div></main>`;
+  audio.startMusic('reward');confetti(42);
+  const clearPending=()=>{state.pendingReward=null;saveState();battle=null;};
+  $('#victory-home')?.addEventListener('click',()=>{clearPending();renderHome();});
+  $('#victory-next')?.addEventListener('click',()=>{const final=quest.id===QUESTS.length;clearPending();if(final)showEnding();else if(next)showQuestBriefing(next.id);else renderHome();});
+}
+
+/* =========================================================
+   v6.2 Soul Awakening — emotional chapter presentation
+   ========================================================= */
+function ensureSoulState() {
+  state.storyFlags ||= {};
+  state.bond ||= { mint: 0 };
+}
+function soulSceneHTML({ kicker='STORY', title, body, art, speaker='', quote='', tone='blue', action='つづける' }) {
+  return `<section class="modal soul-scene soul-${tone}" role="dialog" aria-modal="true" aria-labelledby="soul-title">
+    <div class="soul-scene-art"><img src="${art}" alt=""><span class="soul-light"></span></div>
+    <div class="soul-scene-copy"><div class="eyebrow">${escapeHTML(kicker)}</div><h2 id="soul-title">${escapeHTML(title)}</h2><p>${escapeHTML(body)}</p>
+    ${quote ? `<blockquote><small>${escapeHTML(speaker)}</small>「${escapeHTML(quote)}」</blockquote>` : ''}
+    <div class="soul-scene-actions"><button id="soul-next" class="btn btn-gold btn-big">${escapeHTML(action)} ${icon('arrow')}</button></div></div>
+  </section>`;
+}
+function playSoulSequence(scenes, onComplete) {
+  let index = 0;
+  const next = () => {
+    if (index >= scenes.length) { closeModal(); onComplete?.(); return; }
+    const scene = scenes[index++];
+    showModal(soulSceneHTML(scene));
+    audio.sfx(index === scenes.length ? 'reward' : 'tap');
+    $('#soul-next')?.addEventListener('click', next, { once: true });
+  };
+  next();
+}
+const SOUL_INTRO = [
+  { kicker:'第1章・星明かりの森', title:'声を失った森', body:'森の奥から、助けを呼ぶ小さな声が聞こえる。しかし、魔法の霧がことばを消していた。', art:'assets/maps/v52/chapter-forest.webp', speaker:'？？？', quote:'Can you hear me?', tone:'forest', action:'声を追う' },
+  { kicker:'相棒との出会い', title:'ミント', body:'光る葉の下に、傷ついた小さな生き物がいた。英語のことばだけが、その光を取り戻せる。', art:'assets/hero/v52/mint-card.webp', speaker:'ミント', quote:'This is my home.', tone:'mint', action:'助ける' },
+  { kicker:'最初の約束', title:'いっしょに森を救う', body:'主人公が英文を読み上げると、ミントの翼に光が戻った。ふたりの冒険が、ここから始まる。', art:'assets/hero/v52/party-title.webp', speaker:'ミント', quote:'Let’s go together!', tone:'gold', action:'冒険を始める' }
+];
+const SOUL_BOSS_PRE = [
+  { kicker:'章ボス', title:'氷のオオカミ', body:'森を凍らせた怪物は、村を襲うためではなく、何かを守るように道をふさいでいた。', art:'assets/monsters/ice-wolf.webp', speaker:'ミント', quote:'あの子、怒っているんじゃない。苦しんでる。', tone:'frost', action:'近づく' },
+  { kicker:'選ぶのは戦い方', title:'倒すのではなく、目を覚まさせる', body:'氷の魔法をBREAKし、正しい英語の光で心を取り戻そう。', art:'assets/maps/v52/battle-frost.webp', speaker:state.profile.name || '主人公', quote:'We will help you.', tone:'blue', action:'ボス戦へ' }
+];
+const SOUL_BOSS_POST = [
+  { kicker:'物語の結末', title:'凍っていた心', body:'英語の光が氷をとかすと、オオカミは静かに頭を下げた。その足元には、守り続けていた小さな卵があった。', art:'assets/monsters/ice-wolf.webp', speaker:'ミント', quote:'たおしたんじゃない。助けられたんだね。', tone:'frost', action:'卵を見る' },
+  { kicker:'新しい仲間の予感', title:'森のたまご', body:'卵の中から、かすかな鼓動が聞こえる。ことばを覚えるほど、新しい命も育っていく。', art:'assets/items/dragon-stone.svg', speaker:'ミント', quote:'この子も、いっしょに育てよう！', tone:'mint', action:'王国へ戻る' }
+];
+
+const originalStartQuestFlowV62 = startQuestFlow;
+startQuestFlow = function(questId) {
+  ensureSoulState();
+  if (questId === 1 && !state.storyFlags.chapter1Intro) {
+    state.storyFlags.chapter1Intro = true; state.bond.mint = Math.max(1, state.bond.mint); saveState();
+    playSoulSequence(SOUL_INTRO, () => showQuestBriefing(questId));
+    return;
+  }
+  if (questId === 4 && !state.storyFlags.frostBossIntro) {
+    state.storyFlags.frostBossIntro = true; saveState();
+    playSoulSequence(SOUL_BOSS_PRE, () => showQuestBriefing(questId));
+    return;
+  }
+  originalStartQuestFlowV62(questId);
+};
+
+const originalRenderVictoryV62 = renderVictory;
+renderVictory = function() {
+  ensureSoulState();
+  const reward = state.pendingReward;
+  if (reward?.questId === 4 && reward.claimed && !state.storyFlags.frostBossEnding) {
+    state.storyFlags.frostBossEnding = true;
+    state.bond.mint = Math.max(3, (state.bond.mint || 0) + 2);
+    saveState();
+    playSoulSequence(SOUL_BOSS_POST, () => originalRenderVictoryV62());
+    return;
+  }
+  originalRenderVictoryV62();
+};
+
+const originalRenderHomeV62 = renderHome;
+renderHome = function() {
+  ensureSoulState();
+  originalRenderHomeV62();
+  const main = document.querySelector('.home-screen, .v61-home, main.screen');
+  const body = document.querySelector('.home-body, .v5-home-body, .content-body');
+  if (!body || document.querySelector('.soul-bond-card')) return;
+  const bond = state.bond.mint || 0;
+  const mood = bond >= 3 ? '親友' : bond >= 1 ? '仲間' : '出会う前';
+  const card = document.createElement('section');
+  card.className = 'panel soul-bond-card';
+  card.innerHTML = `<img src="assets/hero/v52/mint-card.webp" alt="ミント"><div><div class="eyebrow">MINT BOND</div><h3>ミントとの絆</h3><p>${bond >= 3 ? '森をいっしょに救った。ミントは主人公を心から信じている。' : bond >= 1 ? '助けたミントが、冒険の相棒になった。' : '第1章で、森に住むふしぎな相棒と出会う。'}</p><div class="soul-bond-meter"><i style="width:${Math.min(100, bond * 30)}%"></i></div></div><strong>${mood}</strong>`;
+  const target = body.querySelector('.v61-quick-grid, .v5-home-grid, section');
+  if (target?.parentNode) target.parentNode.insertBefore(card, target.nextSibling); else body.appendChild(card);
+};
+
+window.EL_SOUL_AWAKENING = { version: '6.2.0', replayIntro(){ ensureSoulState(); playSoulSequence(SOUL_INTRO, renderHome); } };
+
+const originalRenderBattleShellV62 = renderBattleShell;
+renderBattleShell = function() {
+  originalRenderBattleShellV62();
+  const shell = document.querySelector('.battle-screen, main.screen');
+  if (!shell || document.querySelector('.soul-battle-line')) return;
+  const monster = battle?.monster;
+  const quest = battle?.quest;
+  const line = document.createElement('div');
+  line.className = 'soul-battle-line';
+  const isFrostBoss = quest?.id === 4;
+  line.innerHTML = `<img src="assets/hero/v52/mint-card.webp" alt="ミント"><div><small>${isFrostBoss ? 'ミントは何かに気づいた' : 'ミントの応援'}</small><strong>${isFrostBoss ? 'このオオカミ、森を守ろうとしてる…！' : `${escapeHTML(monster?.name || '敵')}の動きをよく見て。ことばが弱点だよ！`}</strong></div>`;
+  const target = document.querySelector('.battle-question-card, .question-panel, .v52-question-wrap, #battle-question');
+  if (target?.parentNode) target.parentNode.insertBefore(line, target); else shell.appendChild(line);
+};
